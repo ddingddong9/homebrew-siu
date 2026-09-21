@@ -11,9 +11,11 @@ class Siu < Formula
   def install
     system "swift", "build", "--disable-sandbox", "-c", "release"
     bin.install ".build/release/siu"
+    bin.install ".build/release/siu_MacArrow.bundle"
   end
 
   test do
     assert_match "kick a football", shell_output("#{bin}/siu --help")
+    assert_match "character asset OK", shell_output("#{bin}/siu asset-check")
   end
 end

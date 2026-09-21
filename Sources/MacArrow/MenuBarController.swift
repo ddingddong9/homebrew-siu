@@ -32,7 +32,8 @@ final class MenuBarController: NSObject {
         if player == nil {
             let controller = PlayerWindowController()
             controller.onKick = { [weak self] direction, y, power in
-                self?.kick(direction: direction, normalizedY: y, power: power)
+                guard let self else { return false }
+                return self.kick(direction: direction, normalizedY: y, power: power)
             }
             player = controller
             controller.show()
@@ -66,19 +67,20 @@ final class MenuBarController: NSObject {
         NSApplication.shared.terminate(nil)
     }
 
-    private func kick(direction: ShootDirection, normalizedY: Double, power: Double) {
+    private func kick(direction: ShootDirection, normalizedY: Double, power: Double) -> Bool {
         guard let target = ScreenLayoutStore.load().target(in: direction) else {
             statusItem.button?.title = "⚠️"
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.statusItem.button?.title = "⚽️" }
-            return
+            return false
         }
         let edge = direction == .left ? "right" : "left"
         BallSender.send(to: target.host, port: port, normalizedY: normalizedY, entryEdge: edge) { [weak self] error in
             DispatchQueue.main.async {
-                self?.statusItem.button?.title = error == nil ? "➶" : "⚠️"
+                self?.statusItem.button?.title = error == nil ? "💨" : "⚠️"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.statusItem.button?.title = "⚽️" }
             }
         }
         _ = power
+        return true
     }
 }

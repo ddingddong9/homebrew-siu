@@ -124,6 +124,14 @@ case "layout":
         print("\(screen.name)  x=\(Int(screen.x)) y=\(Int(screen.y))  \(marker)")
     }
 
+case "asset-check":
+    guard let url = Bundle.module.url(forResource: "siu-character", withExtension: "png"),
+          NSImage(contentsOf: url) != nil else {
+        fputs("Could not load character asset.\n", stderr)
+        exit(1)
+    }
+    print("character asset OK")
+
 case "--help", "-h", "help":
     usage()
 
