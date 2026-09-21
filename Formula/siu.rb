@@ -2,8 +2,8 @@ class Siu < Formula
   desc "Kick a football from one Mac into another Mac's screen"
   homepage "https://github.com/ddingddong9/homebrew-siu"
   on_arm do
-    url "https://github.com/ddingddong9/homebrew-siu/releases/download/v1.2.0/siu-v1.2.0-macos-arm64.zip"
-    sha256 "52a6634dbebec20fb12f92665350b29c3b7856e5a249dd6f8924a0a131544e9b"
+    url "https://github.com/ddingddong9/homebrew-siu/releases/download/v1.2.1/siu-v1.2.1-macos-arm64.zip"
+    sha256 "7aeac4345ad6711f9278bc4065031ee1bea92f097ce4f072b7aef7535cc9461c"
   end
 
   on_intel do
@@ -13,8 +13,8 @@ class Siu < Formula
   license "MIT"
 
   def install
-    bin.install "bin/siu"
-    bin.install "bin/siu_MacArrow.bundle"
+    bin.install "siu"
+    bin.install "siu_MacArrow.bundle"
   end
 
   test do
