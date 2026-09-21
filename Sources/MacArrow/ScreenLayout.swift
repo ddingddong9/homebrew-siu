@@ -44,12 +44,15 @@ struct ScreenLayout: Codable, Equatable {
 enum ScreenLayoutStore {
     static var fileURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/mac-arrow", isDirectory: true)
+            .appendingPathComponent(".config/siu", isDirectory: true)
             .appendingPathComponent("layout.json")
     }
 
     static func load() -> ScreenLayout {
-        guard let data = try? Data(contentsOf: fileURL),
+        let legacyURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/mac-arrow/layout.json")
+        let sourceURL = FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : legacyURL
+        guard let data = try? Data(contentsOf: sourceURL),
               let layout = try? JSONDecoder().decode(ScreenLayout.self, from: data) else {
             return .initial
         }

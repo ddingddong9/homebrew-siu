@@ -1,24 +1,24 @@
 import Foundation
 import Network
 
-enum ArrowNetworkingError: LocalizedError {
+enum BallNetworkingError: LocalizedError {
     case invalidPort(String)
     case encodingFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidPort(let value): return "Invalid port: \(value)"
-        case .encodingFailed: return "Could not encode the arrow message."
+        case .encodingFailed: return "Could not encode the football message."
         }
     }
 }
 
-final class ArrowSender {
+final class BallSender {
     static func send(to host: String, port: UInt16, normalizedY: Double, entryEdge: String = "right", completion: @escaping (Error?) -> Void) {
-        let message = ArrowMessage(normalizedY: normalizedY, entryEdge: entryEdge)
+        let message = BallMessage(normalizedY: normalizedY, entryEdge: entryEdge)
         guard let data = try? JSONEncoder().encode(message),
               let nwPort = NWEndpoint.Port(rawValue: port) else {
-            completion(ArrowNetworkingError.encodingFailed)
+            completion(BallNetworkingError.encodingFailed)
             return
         }
 
@@ -41,17 +41,17 @@ final class ArrowSender {
     }
 }
 
-final class ArrowReceiver {
+final class BallReceiver {
     private let listener: NWListener
-    private let onArrow: (ArrowMessage) -> Void
+    private let onBall: (BallMessage) -> Void
     private let decoder = JSONDecoder()
 
-    init(port: UInt16, onArrow: @escaping (ArrowMessage) -> Void) throws {
+    init(port: UInt16, onBall: @escaping (BallMessage) -> Void) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw ArrowNetworkingError.invalidPort(String(port))
+            throw BallNetworkingError.invalidPort(String(port))
         }
         self.listener = try NWListener(using: .udp, on: nwPort)
-        self.onArrow = onArrow
+        self.onBall = onBall
     }
 
     func start() {
@@ -71,10 +71,10 @@ final class ArrowReceiver {
         connection.receiveMessage { [weak self] data, _, _, _ in
             defer { connection.cancel() }
             guard let self, let data,
-                  let message = try? self.decoder.decode(ArrowMessage.self, from: data),
-                  message.version == ArrowMessage.protocolVersion,
+                  let message = try? self.decoder.decode(BallMessage.self, from: data),
+                  message.version == BallMessage.protocolVersion,
                   abs(message.sentAt.timeIntervalSinceNow) < 30 else { return }
-            self.onArrow(message)
+            self.onBall(message)
         }
     }
 }

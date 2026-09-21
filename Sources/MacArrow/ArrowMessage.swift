@@ -1,6 +1,6 @@
 import Foundation
 
-struct ArrowMessage: Codable, Equatable {
+struct BallMessage: Codable, Equatable {
     static let protocolVersion = 1
 
     let version: Int

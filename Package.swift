@@ -2,14 +2,15 @@
 import PackageDescription
 
 let package = Package(
-    name: "mac-arrow",
+    name: "siu",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "mac-arrow", targets: ["MacArrow"])
+        .executable(name: "siu", targets: ["MacArrow"])
     ],
     targets: [
         .executableTarget(
             name: "MacArrow",
+            resources: [.process("Resources")],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("Network")

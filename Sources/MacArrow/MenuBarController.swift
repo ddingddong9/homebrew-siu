@@ -3,42 +3,42 @@ import AppKit
 @MainActor
 final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
-    private let overlay: ArrowOverlayController
+    private let overlay: BallOverlayController
     private let port: UInt16
-    private var archer: ArcherWindowController?
+    private var player: PlayerWindowController?
     private var layoutEditor: LayoutEditorWindowController?
-    private let archerMenuItem = NSMenuItem(title: "궁수 생성", action: #selector(toggleArcher), keyEquivalent: "")
+    private let playerMenuItem = NSMenuItem(title: "선수 생성", action: #selector(togglePlayer), keyEquivalent: "")
 
-    init(overlay: ArrowOverlayController, port: UInt16) {
+    init(overlay: BallOverlayController, port: UInt16) {
         self.overlay = overlay
         self.port = port
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
-        statusItem.button?.title = "🏹"
+        statusItem.button?.title = "⚽️"
         let menu = NSMenu()
-        archerMenuItem.target = self
-        menu.addItem(archerMenuItem)
+        playerMenuItem.target = self
+        menu.addItem(playerMenuItem)
         menu.addItem(NSMenuItem(title: "화면 배치…", action: #selector(openLayout), keyEquivalent: ","))
         menu.items.last?.target = self
-        menu.addItem(NSMenuItem(title: "모든 화살 지우기", action: #selector(clearArrows), keyEquivalent: "k"))
+        menu.addItem(NSMenuItem(title: "모든 축구공 지우기", action: #selector(clearBalls), keyEquivalent: "k"))
         menu.items.last?.target = self
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "mac-arrow 종료", action: #selector(quit), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: "siu 종료", action: #selector(quit), keyEquivalent: "q"))
         menu.items.last?.target = self
         statusItem.menu = menu
     }
 
-    @objc private func toggleArcher() {
-        if archer == nil {
-            let controller = ArcherWindowController()
-            controller.onFire = { [weak self] direction, y, power in
-                self?.fire(direction: direction, normalizedY: y, power: power)
+    @objc private func togglePlayer() {
+        if player == nil {
+            let controller = PlayerWindowController()
+            controller.onKick = { [weak self] direction, y, power in
+                self?.kick(direction: direction, normalizedY: y, power: power)
             }
-            archer = controller
+            player = controller
             controller.show()
-            archerMenuItem.title = "궁수 숨기기"
-        } else if let visible = archer?.toggle() {
-            archerMenuItem.title = visible ? "궁수 숨기기" : "궁수 생성"
+            playerMenuItem.title = "선수 숨기기"
+        } else if let visible = player?.toggle() {
+            playerMenuItem.title = visible ? "선수 숨기기" : "선수 생성"
         }
     }
 
@@ -50,7 +50,7 @@ final class MenuBarController: NSObject {
         }
         let editor = LayoutEditorWindowController(layout: ScreenLayoutStore.load(), terminateOnClose: false)
         editor.onClose = { [weak self] in
-            self?.archer?.refreshLayout()
+            self?.player?.refreshLayout()
             self?.layoutEditor = nil
         }
         layoutEditor = editor
@@ -58,7 +58,7 @@ final class MenuBarController: NSObject {
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 
-    @objc private func clearArrows() {
+    @objc private func clearBalls() {
         overlay.clearAll()
     }
 
@@ -66,17 +66,17 @@ final class MenuBarController: NSObject {
         NSApplication.shared.terminate(nil)
     }
 
-    private func fire(direction: ShootDirection, normalizedY: Double, power: Double) {
+    private func kick(direction: ShootDirection, normalizedY: Double, power: Double) {
         guard let target = ScreenLayoutStore.load().target(in: direction) else {
             statusItem.button?.title = "⚠️"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.statusItem.button?.title = "🏹" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.statusItem.button?.title = "⚽️" }
             return
         }
         let edge = direction == .left ? "right" : "left"
-        ArrowSender.send(to: target.host, port: port, normalizedY: normalizedY, entryEdge: edge) { [weak self] error in
+        BallSender.send(to: target.host, port: port, normalizedY: normalizedY, entryEdge: edge) { [weak self] error in
             DispatchQueue.main.async {
                 self?.statusItem.button?.title = error == nil ? "➶" : "⚠️"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.statusItem.button?.title = "🏹" }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.statusItem.button?.title = "⚽️" }
             }
         }
         _ = power

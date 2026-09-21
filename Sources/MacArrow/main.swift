@@ -5,20 +5,20 @@ private let defaultPort: UInt16 = 45_678
 
 private func usage() {
     print("""
-    mac-arrow — send an arrow between two Macs
+    siu — kick a football from one Mac into another Mac's screen
 
     Usage:
-      mac-arrow setup
-      mac-arrow receive [--port 45678]
-      mac-arrow shoot <left|right|hostname-or-ip> [--port 45678] [--y 0.0...1.0]
-      mac-arrow layout
-      mac-arrow demo [--y 0.0...1.0]
+      siu setup
+      siu start [--port 45678]
+      siu kick <left|right|hostname-or-ip> [--port 45678] [--y 0.0...1.0]
+      siu layout
+      siu demo [--y 0.0...1.0]
 
     Examples:
-      mac-arrow setup
-      mac-arrow receive
-      mac-arrow shoot left --y 0.55
-      mac-arrow shoot friends-mac.local
+      siu setup
+      siu start
+      siu kick left --y 0.18
+      siu kick friends-mac.local
     """)
 }
 
@@ -33,7 +33,7 @@ private func parsedPort(_ arguments: [String]) -> UInt16? {
 }
 
 private func parsedY(_ arguments: [String]) -> Double {
-    Double(value(after: "--y", in: arguments) ?? "0.5") ?? 0.5
+    Double(value(after: "--y", in: arguments) ?? "0.18") ?? 0.18
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
@@ -43,7 +43,7 @@ guard let command = arguments.first else {
 }
 
 switch command {
-case "shoot":
+case "kick", "shoot":
     guard arguments.count >= 2, let port = parsedPort(arguments) else {
         usage()
         exit(2)
@@ -52,45 +52,45 @@ case "shoot":
     let direction = ShootDirection(rawValue: destination)
     let target = direction.flatMap { ScreenLayoutStore.load().target(in: $0) }
     if direction != nil && target == nil {
-        fputs("No configured screen is positioned to the \(destination). Run `mac-arrow setup`.\n", stderr)
+        fputs("No configured screen is positioned to the \(destination). Run `siu setup`.\n", stderr)
         exit(2)
     }
     let host = target?.host ?? destination
     let entryEdge = direction == .right ? "left" : "right"
     let semaphore = DispatchSemaphore(value: 0)
     var sendError: Error?
-    ArrowSender.send(to: host, port: port, normalizedY: parsedY(arguments), entryEdge: entryEdge) { error in
+    BallSender.send(to: host, port: port, normalizedY: parsedY(arguments), entryEdge: entryEdge) { error in
         sendError = error
         semaphore.signal()
     }
     if semaphore.wait(timeout: .now() + 5) == .timedOut {
-        fputs("Timed out sending arrow.\n", stderr)
+        fputs("Timed out kicking the football.\n", stderr)
         exit(1)
     }
     if let sendError {
-        fputs("Could not send arrow: \(sendError.localizedDescription)\n", stderr)
+        fputs("Could not kick the football: \(sendError.localizedDescription)\n", stderr)
         exit(1)
     }
     let targetName = target.map { "\($0.name) (\($0.host))" } ?? host
-    print("🏹 Arrow sent to \(targetName):\(port)")
+    print("⚽️ Football kicked to \(targetName):\(port) — SIU!")
 
-case "receive":
+case "start", "receive":
     guard let port = parsedPort(arguments) else {
         usage()
         exit(2)
     }
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let overlay = MainActor.assumeIsolated { ArrowOverlayController() }
+    let overlay = MainActor.assumeIsolated { BallOverlayController() }
     let menuBar = MainActor.assumeIsolated { MenuBarController(overlay: overlay, port: port) }
     do {
-        let receiver = try ArrowReceiver(port: port) { message in
+        let receiver = try BallReceiver(port: port) { message in
             DispatchQueue.main.async {
-                overlay.showArrow(normalizedY: message.normalizedY, entryEdge: message.entryEdge ?? "right")
+                overlay.showBall(normalizedY: message.normalizedY, entryEdge: message.entryEdge ?? "right")
             }
         }
         receiver.start()
-        print("🎯 Waiting for arrows on UDP port \(port). Use the 🏹 menu bar icon to create an archer.")
+        print("⚽️ Waiting for footballs on UDP port \(port). Use the ⚽️ menu bar icon to create a player.")
         withExtendedLifetime((receiver, menuBar)) { app.run() }
     } catch {
         fputs("Could not start receiver: \(error.localizedDescription)\n", stderr)
@@ -100,9 +100,9 @@ case "receive":
 case "demo":
     let app = NSApplication.shared
     app.setActivationPolicy(.accessory)
-    let overlay = MainActor.assumeIsolated { ArrowOverlayController() }
+    let overlay = MainActor.assumeIsolated { BallOverlayController() }
     DispatchQueue.main.async {
-        overlay.showArrow(normalizedY: parsedY(arguments))
+        overlay.showBall(normalizedY: parsedY(arguments))
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { app.terminate(nil) }
     }
     app.run()

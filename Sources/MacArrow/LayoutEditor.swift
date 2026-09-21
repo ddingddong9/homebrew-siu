@@ -22,7 +22,7 @@ final class LayoutEditorWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "mac-arrow 화면 배치"
+        window.title = "siu 화면 배치"
         window.center()
         super.init(window: window)
         window.delegate = self
