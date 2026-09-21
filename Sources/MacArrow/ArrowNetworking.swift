@@ -14,8 +14,8 @@ enum ArrowNetworkingError: LocalizedError {
 }
 
 final class ArrowSender {
-    static func send(to host: String, port: UInt16, normalizedY: Double, completion: @escaping (Error?) -> Void) {
-        let message = ArrowMessage(normalizedY: normalizedY)
+    static func send(to host: String, port: UInt16, normalizedY: Double, entryEdge: String = "right", completion: @escaping (Error?) -> Void) {
+        let message = ArrowMessage(normalizedY: normalizedY, entryEdge: entryEdge)
         guard let data = try? JSONEncoder().encode(message),
               let nwPort = NWEndpoint.Port(rawValue: port) else {
             completion(ArrowNetworkingError.encodingFailed)

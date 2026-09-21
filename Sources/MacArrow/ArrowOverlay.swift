@@ -4,7 +4,12 @@ import AppKit
 final class ArrowOverlayController {
     private var windows: [NSWindow] = []
 
-    func showArrow(normalizedY: Double) {
+    func clearAll() {
+        windows.forEach { $0.orderOut(nil) }
+        windows.removeAll()
+    }
+
+    func showArrow(normalizedY: Double, entryEdge: String = "right") {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let window = NSWindow(
             contentRect: screen.frame,
@@ -22,6 +27,7 @@ final class ArrowOverlayController {
 
         let view = ArrowView(frame: NSRect(origin: .zero, size: screen.frame.size))
         view.normalizedY = normalizedY
+        view.entersFromRight = entryEdge != "left"
         window.contentView = view
         window.orderFrontRegardless()
         windows.append(window)
@@ -31,6 +37,7 @@ final class ArrowOverlayController {
 
 private final class ArrowView: NSView {
     var normalizedY = 0.5
+    var entersFromRight = true
     private let arrowLayer = CAShapeLayer()
 
     override init(frame frameRect: NSRect) {
@@ -49,28 +56,34 @@ private final class ArrowView: NSView {
     func animate() {
         layoutSubtreeIfNeeded()
         let y = bounds.height * CGFloat(normalizedY)
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: 120, y: 0))
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: 22, y: 15))
-        path.move(to: CGPoint(x: 0, y: 0))
-        path.addLine(to: CGPoint(x: 22, y: -15))
-        path.move(to: CGPoint(x: 120, y: 0))
-        path.addLine(to: CGPoint(x: 102, y: 10))
-        path.move(to: CGPoint(x: 120, y: 0))
-        path.addLine(to: CGPoint(x: 102, y: -10))
+        let path = makeArrowPath(pointingLeft: entersFromRight)
         arrowLayer.path = path
-        arrowLayer.position = CGPoint(x: bounds.width + 140, y: y)
+        let startX = entersFromRight ? bounds.width + 140 : -140
+        let endX = entersFromRight ? bounds.width * 0.70 : bounds.width * 0.30
+        arrowLayer.position = CGPoint(x: startX, y: y)
 
         CATransaction.begin()
         let flight = CABasicAnimation(keyPath: "position.x")
-        flight.fromValue = bounds.width + 140
-        flight.toValue = bounds.width * 0.70
+        flight.fromValue = startX
+        flight.toValue = endX
         flight.duration = 0.48
         flight.timingFunction = CAMediaTimingFunction(name: .easeOut)
-        arrowLayer.position.x = bounds.width * 0.70
+        arrowLayer.position.x = endX
         arrowLayer.add(flight, forKey: "flight")
         CATransaction.commit()
+    }
+
+    private func makeArrowPath(pointingLeft: Bool) -> CGPath {
+        let tipX: CGFloat = pointingLeft ? 0 : 120
+        let tailX: CGFloat = pointingLeft ? 120 : 0
+        let innerX: CGFloat = pointingLeft ? 22 : 98
+        let featherX: CGFloat = pointingLeft ? 102 : 18
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: tipX, y: 0)); path.addLine(to: CGPoint(x: tailX, y: 0))
+        path.move(to: CGPoint(x: tipX, y: 0)); path.addLine(to: CGPoint(x: innerX, y: 15))
+        path.move(to: CGPoint(x: tipX, y: 0)); path.addLine(to: CGPoint(x: innerX, y: -15))
+        path.move(to: CGPoint(x: tailX, y: 0)); path.addLine(to: CGPoint(x: featherX, y: 10))
+        path.move(to: CGPoint(x: tailX, y: 0)); path.addLine(to: CGPoint(x: featherX, y: -10))
+        return path
     }
 }
