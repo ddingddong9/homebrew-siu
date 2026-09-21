@@ -1,8 +1,8 @@
 class Siu < Formula
   desc "Kick a football from one Mac into another Mac's screen"
   homepage "https://github.com/ddingddong9/homebrew-siu"
-  url "https://github.com/ddingddong9/homebrew-siu/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "70dd093eeff8e78f7a24a1a27780143c888d07f5cf007899777f665805d434d2"
+  url "https://github.com/ddingddong9/homebrew-siu/archive/refs/tags/v1.1.0.tar.gz"
+  sha256 "52f5b25d9ecf67321a30092f86d20918cc25e61d43e39c09466a17c41aa8d0e2"
   head "https://github.com/ddingddong9/homebrew-siu.git", branch: "main"
   license "MIT"
 
