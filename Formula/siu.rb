@@ -1,17 +1,20 @@
 class Siu < Formula
   desc "Kick a football from one Mac into another Mac's screen"
   homepage "https://github.com/ddingddong9/homebrew-siu"
-  url "https://github.com/ddingddong9/homebrew-siu/archive/refs/tags/v1.1.0.tar.gz"
-  sha256 "52f5b25d9ecf67321a30092f86d20918cc25e61d43e39c09466a17c41aa8d0e2"
-  head "https://github.com/ddingddong9/homebrew-siu.git", branch: "main"
+  on_arm do
+    url "https://github.com/ddingddong9/homebrew-siu/releases/download/v1.2.0/siu-v1.2.0-macos-arm64.zip"
+    sha256 "52a6634dbebec20fb12f92665350b29c3b7856e5a249dd6f8924a0a131544e9b"
+  end
+
+  on_intel do
+    odie "siu currently provides a prebuilt Apple Silicon package only."
+  end
+
   license "MIT"
 
-  depends_on xcode: ["15.0", :build]
-
   def install
-    system "swift", "build", "--disable-sandbox", "-c", "release"
-    bin.install ".build/release/siu"
-    bin.install ".build/release/siu_MacArrow.bundle"
+    bin.install "bin/siu"
+    bin.install "bin/siu_MacArrow.bundle"
   end
 
   test do
