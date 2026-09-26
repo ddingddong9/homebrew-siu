@@ -4,11 +4,13 @@ import Network
 enum BallNetworkingError: LocalizedError {
     case invalidPort(String)
     case encodingFailed
+    case timedOut
 
     var errorDescription: String? {
         switch self {
         case .invalidPort(let value): return "Invalid port: \(value)"
         case .encodingFailed: return "Could not encode the football message."
+        case .timedOut: return "The other Mac did not acknowledge the match message."
         }
     }
 }

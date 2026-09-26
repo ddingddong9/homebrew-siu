@@ -13,6 +13,32 @@ private enum PlayerDockSide {
     }
 }
 
+private enum PlayerHeading {
+    case up, upRight, right, downRight, down, downLeft, left, upLeft
+
+    init(dx: CGFloat, dy: CGFloat) {
+        let ax = abs(dx), ay = abs(dy)
+        if ax < ay * 0.414 { self = dy >= 0 ? .up : .down }
+        else if ay < ax * 0.414 { self = dx >= 0 ? .right : .left }
+        else if dx > 0 { self = dy > 0 ? .upRight : .downRight }
+        else { self = dy > 0 ? .upLeft : .downLeft }
+    }
+
+    var isMirrored: Bool { [.left, .upLeft, .downLeft].contains(self) }
+    var vector: CGPoint {
+        switch self {
+        case .up: return CGPoint(x: 0, y: 1)
+        case .upRight: return CGPoint(x: 0.707, y: 0.707)
+        case .right: return CGPoint(x: 1, y: 0)
+        case .downRight: return CGPoint(x: 0.707, y: -0.707)
+        case .down: return CGPoint(x: 0, y: -1)
+        case .downLeft: return CGPoint(x: -0.707, y: -0.707)
+        case .left: return CGPoint(x: -1, y: 0)
+        case .upLeft: return CGPoint(x: -0.707, y: 0.707)
+        }
+    }
+}
+
 private final class GamePanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -21,11 +47,14 @@ private final class GamePanel: NSPanel {
 @MainActor
 final class PlayerWindowController: NSWindowController {
     var onKick: ((ShootDirection, Double, Double) -> Bool)?
+    var onMatchKick: ((CGPoint, CGPoint) -> Bool)?
+    var onMatchTackle: ((CGPoint, CGPoint) -> Void)?
     private let playerView: PlayerView
     private let ball = LocalBallWindowController()
     private var dockSide: PlayerDockSide
     private var facing: ShootDirection
     private var ballIsFlying = false
+    private var matchMode = false
 
     init() {
         let dockSide = PlayerDockSide.from(ScreenLayoutStore.load())
@@ -50,6 +79,7 @@ final class PlayerWindowController: NSWindowController {
         super.init(window: panel)
         player.onMove = { [weak self] dx, dy in self?.move(dx: dx, dy: dy) }
         player.onKickAttempt = { [weak self] in self?.tryKick() }
+        player.onTackleAttempt = { [weak self] in self?.tryTackle() }
         positionAtConfiguredSide()
     }
 
@@ -72,15 +102,28 @@ final class PlayerWindowController: NSWindowController {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(playerView)
         NSApplication.shared.activate(ignoringOtherApps: true)
-        resetBall()
+        if !matchMode { resetBall() }
     }
+
+    func setMatchMode(_ enabled: Bool) {
+        matchMode = enabled
+        if enabled { ball.hide() }
+        else if window?.isVisible == true { resetBall() }
+    }
+
+    var footPosition: CGPoint? {
+        guard let window else { return nil }
+        return CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
+    }
+
+    func stunForTackle() { playerView.stun() }
 
     func refreshLayout() {
         dockSide = PlayerDockSide.from(ScreenLayoutStore.load())
         facing = dockSide == .right ? .left : .right
         playerView.setFacing(facing)
         positionAtConfiguredSide()
-        if window?.isVisible == true { resetBall() }
+        if window?.isVisible == true, !matchMode { resetBall() }
     }
 
     private func positionAtConfiguredSide() {
@@ -99,11 +142,21 @@ final class PlayerWindowController: NSWindowController {
         window.setFrameOrigin(origin)
         if dx < 0 { facing = .left }
         if dx > 0 { facing = .right }
-        playerView.setFacing(facing)
-        playerView.didWalk()
+        playerView.setHeading(PlayerHeading(dx: dx, dy: dy))
     }
 
     private func tryKick() {
+        guard !playerView.isStunned else { return }
+        if matchMode {
+            guard let window else { return }
+            let foot = CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
+            guard onMatchKick?(foot, playerView.aimVector) == true else {
+                playerView.showTooFarFeedback()
+                return
+            }
+            playerView.didKick()
+            return
+        }
         guard !ballIsFlying, let window else { return }
         let playerFoot = CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
         let ballCenter = ball.center
@@ -112,14 +165,29 @@ final class PlayerWindowController: NSWindowController {
             playerView.showTooFarFeedback()
             return
         }
-        guard onKick?(facing, 0.16, 1) == true else { return }
+        let shotDirection: ShootDirection = abs(playerView.aimVector.x) < 0.1 ? facing :
+            (playerView.aimVector.x < 0 ? .left : .right)
+        guard onKick?(shotDirection, 0.16, 1) == true else { return }
         ballIsFlying = true
         playerView.didKick()
-        ball.kick(direction: facing) { [weak self] in
+        ball.kick(direction: shotDirection) { [weak self] in
             guard let self else { return }
             self.ballIsFlying = false
             self.resetBall()
         }
+    }
+
+    private func tryTackle() {
+        guard !playerView.isStunned else { return }
+        guard playerView.didTackle(), !ballIsFlying, let window else { return }
+        let playerFoot = CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
+        if matchMode {
+            onMatchTackle?(playerFoot, playerView.aimVector)
+            return
+        }
+        let ballCenter = ball.center
+        guard hypot(playerFoot.x - ballCenter.x, playerFoot.y - ballCenter.y) < 135 else { return }
+        ball.bump(along: playerView.heading.vector)
     }
 
     private func resetBall() {
@@ -177,6 +245,18 @@ private final class LocalBallWindowController {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: completion)
         }
     }
+
+    func bump(along vector: CGPoint) {
+        guard let screen = window.screen ?? NSScreen.main else { return }
+        let bounds = screen.visibleFrame
+        let x = min(max(window.frame.minX + vector.x * 78, bounds.minX), bounds.maxX - window.frame.width)
+        let y = min(max(window.frame.minY + vector.y * 42, bounds.minY), bounds.maxY - window.frame.height)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            window.animator().setFrameOrigin(CGPoint(x: x, y: y))
+        }
+    }
 }
 
 private final class LocalBallView: NSView {
@@ -194,21 +274,48 @@ private final class LocalBallView: NSView {
 private final class PlayerView: NSView {
     var onMove: ((CGFloat, CGFloat) -> Void)?
     var onKickAttempt: (() -> Void)?
-    private var facing: ShootDirection
-    private let character: NSImage?
+    var onTackleAttempt: (() -> Void)?
+    private(set) var heading: PlayerHeading
+    private(set) var aimVector: CGPoint
+    private let moveFrames: [NSImage]
+    private let runFrames: [NSImage]
+    private let runFrontFrames: [NSImage]
+    private let runBackFrames: [NSImage]
+    private let kickFrames: [NSImage]
+    private let kickFrontFrames: [NSImage]
+    private let kickSideFrames: [NSImage]
+    private let tackleFrames: [NSImage]
+    private let tackleFrontFrames: [NSImage]
+    private let tackleBackFrames: [NSImage]
+    private var pressedKeys = Set<UInt16>()
+    private var sprintHeld = false
+    private var mouseAimHeld = false
     private var timer: Timer?
-    private var phase: CGFloat = 0
-    private var walkPulse: CGFloat = 0
-    private var kickPulse: CGFloat = 0
+    private var runPhase: CGFloat = 0
+    private var kickStartedAt: TimeInterval = -.infinity
+    private var tackleStartedAt: TimeInterval = -.infinity
+    private var stunnedUntil: TimeInterval = 0
     private var feedbackFrames = 0
 
     init(frame frameRect: NSRect, facing: ShootDirection) {
-        self.facing = facing
-        if let url = Bundle.module.url(forResource: "siu-character", withExtension: "png") {
-            self.character = NSImage(contentsOf: url)
-        } else {
-            self.character = nil
+        heading = facing == .left ? .left : .right
+        aimVector = heading.vector
+        func frames(_ name: String, count: Int) -> [NSImage] {
+            (1...count).compactMap { index in
+                guard let url = Bundle.module.url(forResource: String(format: "%@-%02d", name, index), withExtension: "png") else { return nil }
+                return NSImage(contentsOf: url)
+            }
         }
+        moveFrames = frames("move", count: 4)
+        runFrames = frames("run", count: 4)
+        runFrontFrames = frames("run-front", count: 4)
+        runBackFrames = frames("run-back", count: 4)
+        kickFrames = frames("kick", count: 8)
+        kickFrontFrames = frames("kick-front", count: 4)
+        kickSideFrames = frames("kick-side", count: 4)
+        tackleFrames = frames("tackle", count: 4)
+        tackleFrontFrames = frames("tackle-front", count: 4)
+        tackleBackFrames = frames("tackle-back", count: 4)
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
@@ -222,89 +329,125 @@ private final class PlayerView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func setFacing(_ direction: ShootDirection) {
-        facing = direction
+        heading = direction == .left ? .left : .right
+        aimVector = heading.vector
         needsDisplay = true
     }
 
-    func didWalk() { walkPulse = 1 }
-    func didKick() { kickPulse = 1 }
+    func setHeading(_ value: PlayerHeading) {
+        guard !mouseAimHeld else { return }
+        heading = value
+        aimVector = value.vector
+        needsDisplay = true
+    }
+
+    func didKick() { kickStartedAt = ProcessInfo.processInfo.systemUptime }
+
+    func didTackle() -> Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - tackleStartedAt >= 1.1, now - kickStartedAt >= 0.65 else { return false }
+        tackleStartedAt = now
+        needsDisplay = true
+        return true
+    }
+
+    var isStunned: Bool { ProcessInfo.processInfo.systemUptime < stunnedUntil }
+
+    func stun() {
+        stunnedUntil = ProcessInfo.processInfo.systemUptime + 0.6
+        pressedKeys.removeAll()
+        needsDisplay = true
+    }
+
     func showTooFarFeedback() { feedbackFrames = 45 }
 
     override func keyDown(with event: NSEvent) {
-        let step: CGFloat = event.modifierFlags.contains(.shift) ? 34 : 18
         switch event.keyCode {
-        case 123: onMove?(-step, 0)
-        case 124: onMove?(step, 0)
-        case 125: onMove?(0, -step)
-        case 126: onMove?(0, step)
-        case 49: onKickAttempt?()
+        case 123, 124, 125, 126: pressedKeys.insert(event.keyCode)
+        case 49: if !event.isARepeat { onKickAttempt?() }
+        case 0: if !event.isARepeat { onTackleAttempt?() } // A
         default: super.keyDown(with: event)
         }
     }
 
+    override func keyUp(with event: NSEvent) {
+        if pressedKeys.contains(event.keyCode) { pressedKeys.remove(event.keyCode) }
+        else { super.keyUp(with: event) }
+    }
+
+    override func flagsChanged(with event: NSEvent) {
+        sprintHeld = event.modifierFlags.contains(.shift)
+        mouseAimHeld = event.modifierFlags.contains(.option)
+        super.flagsChanged(with: event)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let character else {
-            NSString(string: "SIU").draw(at: CGPoint(x: 110, y: 180), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 30)])
-            return
-        }
+        let now = ProcessInfo.processInfo.systemUptime
+        let isRunning = !pressedKeys.isDisjoint(with: [123, 124, 125, 126])
+        let sinceKick = now - kickStartedAt
+        let sinceTackle = now - tackleStartedAt
+        let sprite: NSImage?
+        let height: CGFloat
+        if sinceKick < 0.72 {
+            let frames: [NSImage]
+            let frameDuration: Double
+            switch heading {
+            case .down: frames = kickFrontFrames; frameDuration = 0.18
+            case .left, .right, .downLeft, .downRight: frames = kickSideFrames; frameDuration = 0.18
+            case .up, .upLeft, .upRight: frames = kickFrames; frameDuration = 0.09
+            }
+            sprite = frames.isEmpty ? nil : frames[min(frames.count - 1, Int(sinceKick / frameDuration))]
+            height = 300
+        } else if sinceTackle < 0.55 {
+            let frames: [NSImage]
+            switch heading {
+            case .down: frames = tackleFrontFrames
+            case .up, .upLeft, .upRight: frames = tackleBackFrames
+            case .left, .right, .downLeft, .downRight: frames = tackleFrames
+            }
+            sprite = frames.isEmpty ? nil : frames[min(frames.count - 1, Int(sinceTackle / 0.13))]
+            height = sinceTackle < 0.26 ? 310 : 180
+        } else if isRunning {
+            let frames: [NSImage]
+            switch heading {
+            case .down, .downLeft, .downRight: frames = runFrontFrames
+            case .up, .upLeft, .upRight: frames = runBackFrames
+            case .left, .right: frames = runFrames
+            }
+            sprite = frames.isEmpty ? nil : frames[Int(runPhase / 4) % frames.count]
+            height = 315
+        } else if !moveFrames.isEmpty {
+            switch heading {
+            case .down: sprite = moveFrames[0]
+            case .downLeft, .downRight: sprite = moveFrames[1]
+            case .left, .right: sprite = moveFrames[2]
+            case .up, .upLeft, .upRight: sprite = moveFrames[3]
+            }
+            height = 330
+        } else { sprite = nil; height = 330 }
 
-        let imageSize = character.size
-        let characterHeight: CGFloat = 350
-        let scale = characterHeight / imageSize.height
-        let characterWidth = imageSize.width * scale
-        let origin = CGPoint(x: (bounds.width - characterWidth) / 2, y: 5)
-        let fullRect = NSRect(origin: origin, size: NSSize(width: characterWidth, height: characterHeight))
-        let cutY = imageSize.height * 0.285
-        let cutDestY = origin.y + cutY * scale
-
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.saveGState()
-        if facing == .left {
-            context.translateBy(x: bounds.width, y: 0)
-            context.scaleBy(x: -1, y: 1)
-        }
-
-        NSGraphicsContext.current?.saveGraphicsState()
-        NSBezierPath(rect: NSRect(x: origin.x, y: cutDestY, width: characterWidth, height: characterHeight - cutY * scale)).addClip()
-        character.draw(in: fullRect, from: NSRect(origin: .zero, size: imageSize), operation: .sourceOver, fraction: 1)
-        NSGraphicsContext.current?.restoreGraphicsState()
-
-        let stride = sin(phase) * 0.20 * walkPulse
-        let kick = kickPulse * 0.68
-        drawLeg(character, fullRect: fullRect, imageSize: imageSize,
-                crop: NSRect(x: imageSize.width * 0.20, y: 0, width: imageSize.width * 0.33, height: cutY * 1.12),
-                pivot: CGPoint(x: origin.x + imageSize.width * 0.38 * scale, y: origin.y + cutY * scale),
-                angle: -stride)
-        drawLeg(character, fullRect: fullRect, imageSize: imageSize,
-                crop: NSRect(x: imageSize.width * 0.48, y: 0, width: imageSize.width * 0.33, height: cutY * 1.12),
-                pivot: CGPoint(x: origin.x + imageSize.width * 0.64 * scale, y: origin.y + cutY * scale),
-                angle: stride + kick)
-        context.restoreGState()
+        if let sprite { drawSprite(sprite, height: height, bob: isRunning && sinceKick >= 0.72 && sinceTackle >= 0.55 ? abs(sin(runPhase * 0.8)) * 4 : 0) }
+        else { NSString(string: "SIU").draw(at: CGPoint(x: 110, y: 180), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 30)]) }
         drawHint()
     }
 
-    private func drawLeg(_ image: NSImage, fullRect: NSRect, imageSize: NSSize, crop: NSRect, pivot: CGPoint, angle: CGFloat) {
+    private func drawSprite(_ image: NSImage, height: CGFloat, bob: CGFloat) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
         context.saveGState()
-        context.translateBy(x: pivot.x, y: pivot.y)
-        context.rotate(by: angle)
-        context.translateBy(x: -pivot.x, y: -pivot.y)
-        let scaleX = fullRect.width / imageSize.width
-        let scaleY = fullRect.height / imageSize.height
-        let clip = NSRect(x: fullRect.minX + crop.minX * scaleX,
-                          y: fullRect.minY + crop.minY * scaleY,
-                          width: crop.width * scaleX,
-                          height: crop.height * scaleY)
-        NSGraphicsContext.current?.saveGraphicsState()
-        NSBezierPath(rect: clip).addClip()
-        image.draw(in: fullRect, from: NSRect(origin: .zero, size: imageSize), operation: .sourceOver, fraction: 1)
-        NSGraphicsContext.current?.restoreGraphicsState()
+        if heading.isMirrored {
+            context.translateBy(x: bounds.width, y: 0)
+            context.scaleBy(x: -1, y: 1)
+        }
+        let ratio = min(height / image.size.height, 255 / image.size.width)
+        let size = NSSize(width: image.size.width * ratio, height: image.size.height * ratio)
+        let rect = NSRect(x: (bounds.width - size.width) / 2, y: 8 + bob, width: size.width, height: size.height)
+        image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1)
         context.restoreGState()
     }
 
     private func drawHint() {
-        let text = feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "← ↑ ↓ → 이동   SPACE 슛"
+        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 이동 · ⌥ 마우스 조준 · SPACE · A")
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
         NSString(string: text).draw(
             in: NSRect(x: 10, y: 365, width: 250, height: 22),
@@ -315,9 +458,25 @@ private final class PlayerView: NSView {
     }
 
     private func tick() {
-        phase += 0.22
-        walkPulse = max(0, walkPulse - 0.035)
-        kickPulse = max(0, kickPulse - 0.075)
+        if window?.isKeyWindow != true { pressedKeys.removeAll(); sprintHeld = false; mouseAimHeld = false }
+        if mouseAimHeld, let window {
+            let foot = CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
+            let pointer = NSEvent.mouseLocation
+            let dx = pointer.x - foot.x, dy = pointer.y - foot.y
+            let length = hypot(dx, dy)
+            if length > 5 {
+                aimVector = CGPoint(x: dx / length, y: dy / length)
+                heading = PlayerHeading(dx: dx, dy: dy)
+            }
+        }
+        let dx = CGFloat((pressedKeys.contains(124) ? 1 : 0) - (pressedKeys.contains(123) ? 1 : 0))
+        let dy = CGFloat((pressedKeys.contains(126) ? 1 : 0) - (pressedKeys.contains(125) ? 1 : 0))
+        if !isStunned && (dx != 0 || dy != 0) {
+            let speed: CGFloat = sprintHeld ? 9 : 5
+            let length = hypot(dx, dy)
+            onMove?(dx / length * speed, dy / length * speed)
+            runPhase += 1
+        }
         feedbackFrames = max(0, feedbackFrames - 1)
         needsDisplay = true
     }
