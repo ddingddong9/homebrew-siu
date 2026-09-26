@@ -8,12 +8,14 @@ final class MenuBarController: NSObject {
     private let transport: MatchTransport
     private let match: MatchCoordinator
     private var player: PlayerWindowController?
+    private var preview: ArenaPreviewController?
     private var layoutEditor: LayoutEditorWindowController?
     private var connectionTimer: Timer?
-    private let playerMenuItem = NSMenuItem(title: "선수 생성", action: #selector(togglePlayer), keyEquivalent: "")
+    private let playerMenuItem = NSMenuItem(title: "연습용 선수 생성", action: #selector(togglePlayer), keyEquivalent: "")
     private let connectionItem = NSMenuItem(title: "연결: 확인 안 됨", action: nil, keyEquivalent: "")
-    private let startItem = NSMenuItem(title: "경기 시작…", action: #selector(startMatch), keyEquivalent: "")
+    private let startItem = NSMenuItem(title: "1대1 경기 시작…", action: #selector(startMatch), keyEquivalent: "")
     private let endItem = NSMenuItem(title: "경기 종료", action: #selector(endMatch), keyEquivalent: "")
+    private let previewItem = NSMenuItem(title: "경기장 미리보기 (AI 연습)", action: #selector(showPreview), keyEquivalent: "")
 
     init(overlay: BallOverlayController, port: UInt16, transport: MatchTransport) {
         self.overlay = overlay
@@ -29,6 +31,13 @@ final class MenuBarController: NSObject {
             guard let self else { return }
             self.startItem.isEnabled = !running
             self.endItem.isEnabled = running
+            self.previewItem.isEnabled = !running
+            self.playerMenuItem.isEnabled = !running
+            if running {
+                self.player?.hide()
+                self.playerMenuItem.title = "연습용 선수 생성"
+                self.preview?.stop()
+            }
             self.connectionItem.title = running ? "연결: 경기 중" : "연결: 경기 종료"
             self.connectionTimer?.invalidate()
             self.connectionTimer = running ? Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -38,8 +47,7 @@ final class MenuBarController: NSObject {
         match.onConnectionIssue = { [weak self] message in
             self?.connectionItem.title = "연결 문제: \(message)"
         }
-        match.approveInvite = { [weak self] _ in
-            guard let self else { return false }
+        match.approveInvite = { _ in
             let alert = NSAlert()
             alert.messageText = "SIU 경기 초대"
             alert.informativeText = "상대 Mac에서 경기를 시작하려고 합니다. 참가할까요?"
@@ -47,7 +55,6 @@ final class MenuBarController: NSObject {
             alert.addButton(withTitle: "거절")
             NSApplication.shared.activate(ignoringOtherApps: true)
             guard alert.runModal() == .alertFirstButtonReturn else { return false }
-            if self.player == nil { self.togglePlayer() }
             return true
         }
         statusItem.button?.title = "⚽️"
@@ -65,7 +72,9 @@ final class MenuBarController: NSObject {
         endItem.target = self
         endItem.isEnabled = false
         menu.addItem(endItem)
-        menu.addItem(NSMenuItem(title: "화면 배치…", action: #selector(openLayout), keyEquivalent: ","))
+        previewItem.target = self
+        menu.addItem(previewItem)
+        menu.addItem(NSMenuItem(title: "상대 연결·화면 배치…", action: #selector(openLayout), keyEquivalent: ","))
         menu.items.last?.target = self
         menu.addItem(NSMenuItem(title: "모든 축구공 지우기", action: #selector(clearBalls), keyEquivalent: "k"))
         menu.items.last?.target = self
@@ -82,17 +91,23 @@ final class MenuBarController: NSObject {
                 guard let self else { return false }
                 return self.kick(direction: direction, normalizedY: y, power: power)
             }
-            match.attachPlayer(controller)
             player = controller
             controller.show()
             playerMenuItem.title = "선수 숨기기"
         } else if let visible = player?.toggle() {
-            playerMenuItem.title = visible ? "선수 숨기기" : "선수 생성"
+            playerMenuItem.title = visible ? "연습용 선수 숨기기" : "연습용 선수 생성"
         }
     }
 
     @objc private func checkConnection() {
         checkPeers { _ in }
+    }
+
+    @objc private func showPreview() {
+        if preview == nil { preview = ArenaPreviewController() }
+        player?.hide()
+        playerMenuItem.title = "연습용 선수 생성"
+        preview?.show()
     }
 
     private func checkPeers(showProgress: Bool = true, completion: @escaping (Bool) -> Void) {
@@ -141,9 +156,8 @@ final class MenuBarController: NSObject {
                 self.connectionItem.title = "경기 시간은 1–90분이어야 합니다"
                 return
             }
-            if self.player == nil { self.togglePlayer() }
             guard self.match.start(duration: minutes) else {
-                self.connectionItem.title = "경기 시작 실패: 화면 배치를 확인하세요"
+                self.connectionItem.title = "경기 시작 실패: 상대 1명만 배치하세요"
                 return
             }
             self.connectionItem.title = "연결: 경기 중"

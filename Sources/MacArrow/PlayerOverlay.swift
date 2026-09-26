@@ -105,6 +105,11 @@ final class PlayerWindowController: NSWindowController {
         if !matchMode { resetBall() }
     }
 
+    func hide() {
+        window?.orderOut(nil)
+        ball.hide()
+    }
+
     func setMatchMode(_ enabled: Bool) {
         matchMode = enabled
         if enabled { ball.hide() }
