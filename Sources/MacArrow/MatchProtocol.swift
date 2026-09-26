@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CryptoKit
 
 enum MatchEventKind: String, Codable, Hashable {
     case ping, pong, ack, start, stop, ball, goal, player, tackle, sync
@@ -9,8 +10,16 @@ enum GameIdentity {
     static let localID = UUID()
 }
 
+enum RoomPairingError: LocalizedError {
+    case pairingRequired
+
+    var errorDescription: String? {
+        "경기 연결에 페어링 코드가 필요합니다. 한 Mac에서 `siu pair-code`, 다른 Mac에서 `siu pair`를 실행하세요."
+    }
+}
+
 struct MatchMessage: Codable {
-    static let protocolVersion = 3
+    static let protocolVersion = 4
     let version: Int
     let id: UUID
     let senderID: UUID
@@ -46,19 +55,48 @@ struct MatchMessage: Codable {
     }
 }
 
+struct MatchEnvelope: Codable {
+    let message: MatchMessage
+    let authenticationCode: Data
+
+    static func seal(_ message: MatchMessage, key: Data) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let payload = try? encoder.encode(message) else { return nil }
+        let mac = Data(HMAC<SHA256>.authenticationCode(for: payload, using: SymmetricKey(data: key)))
+        return try? encoder.encode(MatchEnvelope(message: message, authenticationCode: mac))
+    }
+
+    static func open(_ data: Data, key: Data) -> MatchMessage? {
+        guard let envelope = try? JSONDecoder().decode(MatchEnvelope.self, from: data) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard let payload = try? encoder.encode(envelope.message),
+              HMAC<SHA256>.isValidAuthenticationCode(envelope.authenticationCode,
+                                                       authenticating: payload,
+                                                       using: SymmetricKey(data: key)) else { return nil }
+        return envelope.message
+    }
+}
+
 final class MatchTransport {
     private let listener: NWListener
     private let port: NWEndpoint.Port
     private let outboundPort: NWEndpoint.Port
+    private let roomKey: Data
     var onMessage: ((MatchMessage) -> Void)?
 
-    init(port: UInt16, remotePort: UInt16? = nil) throws {
+    init(port: UInt16, remotePort: UInt16? = nil, roomKey: Data? = nil) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port),
               let peerPort = NWEndpoint.Port(rawValue: remotePort ?? port) else {
             throw BallNetworkingError.invalidPort(String(port))
         }
         self.port = nwPort
         outboundPort = peerPort
+        guard let roomKey = roomKey ?? RoomSecretStore.load(), roomKey.count == 16 else {
+            throw RoomPairingError.pairingRequired
+        }
+        self.roomKey = roomKey
         listener = try NWListener(using: .udp, on: nwPort)
     }
 
@@ -67,7 +105,7 @@ final class MatchTransport {
             connection.start(queue: .global(qos: .userInitiated))
             connection.receiveMessage { [weak self] data, _, _, _ in
                 guard let self, let data,
-                      let message = try? JSONDecoder().decode(MatchMessage.self, from: data),
+                      let message = MatchEnvelope.open(data, key: self.roomKey),
                       message.version == MatchMessage.protocolVersion,
                       abs(message.sentAt.timeIntervalSinceNow) < 30 else {
                     connection.cancel()
@@ -75,12 +113,12 @@ final class MatchTransport {
                 }
                 if message.kind == .ping {
                     let response = MatchMessage(kind: .pong, id: message.id)
-                    let encoded = try? JSONEncoder().encode(response)
+                    let encoded = MatchEnvelope.seal(response, key: self.roomKey)
                     connection.send(content: encoded, completion: .contentProcessed { _ in connection.cancel() })
                 } else {
                     guard message.kind != .pong, message.kind != .ack else { connection.cancel(); return }
                     let ack = MatchMessage(kind: .ack, id: message.id)
-                    let encoded = try? JSONEncoder().encode(ack)
+                    let encoded = MatchEnvelope.seal(ack, key: self.roomKey)
                     connection.send(content: encoded, completion: .contentProcessed { _ in connection.cancel() })
                     DispatchQueue.main.async { self.onMessage?(message) }
                 }
@@ -95,7 +133,7 @@ final class MatchTransport {
     func stop() { listener.cancel() }
 
     func send(_ message: MatchMessage, to host: String, completion: ((Error?) -> Void)? = nil) {
-        guard let data = try? JSONEncoder().encode(message) else {
+        guard let data = MatchEnvelope.seal(message, key: roomKey) else {
             completion?(BallNetworkingError.encodingFailed)
             return
         }
@@ -126,7 +164,7 @@ final class MatchTransport {
             case .ready:
                 connection.receiveMessage { response, _, _, _ in
                     guard let response,
-                          let ack = try? JSONDecoder().decode(MatchMessage.self, from: response),
+                          let ack = MatchEnvelope.open(response, key: self.roomKey),
                           ack.kind == .ack, ack.id == message.id else {
                         finish(BallNetworkingError.timedOut)
                         return
@@ -144,7 +182,7 @@ final class MatchTransport {
 
     func ping(host: String, completion: @escaping (UUID?) -> Void) {
         let request = MatchMessage(kind: .ping)
-        guard let data = try? JSONEncoder().encode(request) else { completion(nil); return }
+        guard let data = MatchEnvelope.seal(request, key: roomKey) else { completion(nil); return }
         let connection = NWConnection(host: NWEndpoint.Host(host), port: outboundPort, using: .udp)
         let lock = NSLock()
         var finished = false
@@ -164,7 +202,7 @@ final class MatchTransport {
                     if error != nil { finish(nil); return }
                     connection.receiveMessage { response, _, _, _ in
                         guard let response,
-                              let message = try? JSONDecoder().decode(MatchMessage.self, from: response),
+                              let message = MatchEnvelope.open(response, key: self.roomKey),
                               message.kind == .pong, message.id == request.id else { finish(nil); return }
                         finish(message.senderID)
                     }

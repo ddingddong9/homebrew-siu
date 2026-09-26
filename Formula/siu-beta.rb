@@ -1,8 +1,8 @@
 class SiuBeta < Formula
   desc "Play an experimental two-Mac football match across adjacent screens"
   homepage "https://github.com/ddingddong9/homebrew-siu"
-  url "https://github.com/ddingddong9/homebrew-siu/releases/download/v1.3.0-beta.2/siu-v1.3.0-beta.2-macos-universal.zip"
-  sha256 "62b8926fe7df9f5d1599a283b9ee23723b82b7f71ea17c0298cd139355e038d4"
+  url "https://github.com/ddingddong9/homebrew-siu/releases/download/v1.3.0-beta.3/siu-v1.3.0-beta.3-macos-universal.zip"
+  sha256 "cf2a6b67fe7a0230675ef33c2a116cbb30ebf19e99bc8b7850e79193b0ef1a78"
   license "MIT"
 
   depends_on macos: :ventura

@@ -44,12 +44,33 @@ enum SelfTest {
                   "score synchronization packet")
         } else { failures.append("score synchronization encoding") }
 
+        let roomKey = Data(repeating: 0xA5, count: 16)
+        if let sealed = MatchEnvelope.seal(packet, key: roomKey) {
+            check(MatchEnvelope.open(sealed, key: roomKey)?.id == packet.id, "authenticated packet")
+            check(MatchEnvelope.open(sealed, key: Data(repeating: 0x5A, count: 16)) == nil,
+                  "wrong room code rejected")
+            if var forged = try? JSONDecoder().decode(MatchEnvelope.self, from: sealed) {
+                let changed = MatchMessage(kind: .goal, matchID: packet.matchID,
+                                           id: packet.id, actorID: GameIdentity.localID)
+                forged = MatchEnvelope(message: changed, authenticationCode: forged.authenticationCode)
+                let tampered = try? JSONEncoder().encode(forged)
+                check(tampered.flatMap { MatchEnvelope.open($0, key: roomKey) } == nil,
+                      "forged score rejected")
+            } else { failures.append("authenticated packet decoding") }
+        } else { failures.append("authenticated packet encoding") }
+
+        check(RoomSecretStore.parse("00112233445566778899AABBCCDDEEFF")?.count == 16,
+              "pairing code parser")
+        check(RoomSecretStore.parse("invalid") == nil, "invalid pairing code")
+
         return failures
     }
 
     static func runNetwork() -> [String] {
         let port = UInt16.random(in: 52000...62000)
-        guard let transport = try? MatchTransport(port: port) else { return ["UDP listener setup"] }
+        guard let transport = try? MatchTransport(port: port, roomKey: Data(repeating: 0xA5, count: 16)) else {
+            return ["UDP listener setup"]
+        }
         let id = UUID()
         var received = false
         var acknowledged = false
@@ -73,8 +94,9 @@ enum SelfTest {
 
     static func runPairSimulation() -> [String] {
         let firstPort = UInt16.random(in: 52000...61998)
-        guard let a = try? MatchTransport(port: firstPort, remotePort: firstPort + 1),
-              let b = try? MatchTransport(port: firstPort + 1, remotePort: firstPort) else {
+        let key = Data(repeating: 0xA5, count: 16)
+        guard let a = try? MatchTransport(port: firstPort, remotePort: firstPort + 1, roomKey: key),
+              let b = try? MatchTransport(port: firstPort + 1, remotePort: firstPort, roomKey: key) else {
             return ["two-peer UDP setup"]
         }
         let matchID = UUID()
@@ -105,5 +127,30 @@ enum SelfTest {
         if seenByB != Set([.start, .ball]) { failures.append("peer B events") }
         if acknowledged != 4 { failures.append("two-peer acknowledgements") }
         return failures
+    }
+
+    static func runWrongRoomSimulation() -> [String] {
+        let port = UInt16.random(in: 52000...62000)
+        guard let sender = try? MatchTransport(port: port + 1, remotePort: port,
+                                               roomKey: Data(repeating: 0xA5, count: 16)),
+              let receiver = try? MatchTransport(port: port, remotePort: port + 1,
+                                                 roomKey: Data(repeating: 0x5A, count: 16)) else {
+            return ["wrong-room UDP setup"]
+        }
+        var received = false
+        var sendFinished = false
+        var rejected = false
+        receiver.onMessage = { _ in received = true }
+        receiver.start()
+        sender.send(MatchMessage(kind: .start, matchID: UUID(), duration: 60), to: "127.0.0.1") { error in
+            sendFinished = true
+            rejected = error != nil
+        }
+        let deadline = Date().addingTimeInterval(3)
+        while !sendFinished && Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+        sender.stop(); receiver.stop()
+        return !received && rejected ? [] : ["wrong-room packet rejection"]
     }
 }
