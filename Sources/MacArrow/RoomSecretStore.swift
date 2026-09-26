@@ -28,10 +28,13 @@ enum RoomSecretStore {
 
     static func generate() throws -> Data {
         if let current = load() { return current }
-        let key = SymmetricKey(size: .bits128)
-        let data = key.withUnsafeBytes { Data($0) }
+        let data = freshKey()
         try save(data)
         return data
+    }
+
+    static func freshKey() -> Data {
+        SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) }
     }
 
     static func save(_ data: Data) throws {

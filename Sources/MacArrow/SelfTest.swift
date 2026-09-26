@@ -201,4 +201,55 @@ enum SelfTest {
         sender.stop(); receiver.stop()
         return !received && rejected ? [] : ["wrong-room packet rejection"]
     }
+
+    static func runRoomJoinSimulation() -> [String] {
+        let guestPort = UInt16.random(in: 52000...61998)
+        let hostPort = guestPort + 1
+        guard let host = try? MatchTransport(port: hostPort, remotePort: guestPort,
+                                             roomKey: Data(repeating: 0xA5, count: 16)),
+              let guest = try? MatchTransport(port: guestPort, remotePort: hostPort,
+                                              roomKey: Data(repeating: 0x5A, count: 16)) else {
+            return ["room join UDP setup"]
+        }
+        var joined = false
+        var hostSawGuest = false
+        host.onPeerPing = { endpoint, _ in
+            host.ping(endpoint: endpoint) { peerID in hostSawGuest = peerID != nil }
+        }
+        host.start(); guest.start()
+        guest.useRoomKey(host.currentKey)
+        guest.ping(host: "127.0.0.1") { peerID in joined = peerID != nil }
+        let deadline = Date().addingTimeInterval(4)
+        while (!joined || !hostSawGuest) && Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+        host.stop(); guest.stop()
+        return joined && hostSawGuest ? [] : ["room join bidirectional handshake"]
+    }
+
+    static func runBonjourRoomSimulation() -> [String] {
+        let guestPort = UInt16.random(in: 52000...61998)
+        let key = RoomSecretStore.freshKey()
+        guard let host = try? MatchTransport(port: guestPort + 1, remotePort: guestPort,
+                                             roomKey: key),
+              let guest = try? MatchTransport(port: guestPort,
+                                              remotePort: guestPort + 1, roomKey: key) else {
+            return ["Bonjour room setup"]
+        }
+        host.start(); guest.start()
+        host.advertiseRoom(true)
+        let browser = MainActor.assumeIsolated { LocalRoomBrowser(transport: guest) }
+        var discovered = false
+        MainActor.assumeIsolated {
+            browser.start(onFound: { _, _ in discovered = true }, onFailure: {})
+        }
+        let deadline = Date().addingTimeInterval(8)
+        while !discovered && Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+        MainActor.assumeIsolated { browser.cancel() }
+        host.advertiseRoom(false)
+        host.stop(); guest.stop()
+        return discovered ? [] : ["Bonjour room discovery"]
+    }
 }
