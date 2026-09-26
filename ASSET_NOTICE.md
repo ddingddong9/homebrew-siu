@@ -6,4 +6,4 @@ The original kick sequence was extracted from a GIF supplied by the project owne
 
 The generated player artwork is an approximate visual depiction. It includes a recognizable player likeness and uniform marks, which may be subject to separate rights. This notice records the project's asset provenance; it is not a trademark or personality-rights grant.
 
-The application icon is a cutout derived from a separate photograph supplied by the project owner. It is not covered by the MIT license. Permission to redistribute that photograph and its derived icon must be confirmed separately before publishing an app build containing it.
+The application icon is a cutout derived from a separate photograph supplied by the project owner. The owner explicitly requested publication of the app build containing this icon. The photograph and derived icon are not covered by the MIT license; this notice does not grant third parties permission to reuse them separately or resolve any photographer or likeness rights.
