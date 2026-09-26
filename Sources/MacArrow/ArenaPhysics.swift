@@ -16,6 +16,14 @@ enum ArenaStepResult: Equatable {
 }
 
 enum ArenaPhysics {
+    static func startingX(conceding side: FieldEdge) -> (left: CGFloat, right: CGFloat) {
+        side == .left ? (0.46, 0.75) : (0.25, 0.54)
+    }
+
+    static func mayTakeKickoff(owner: FieldEdge?, player: FieldEdge) -> Bool {
+        owner == nil || owner == player
+    }
+
     static func step(_ ball: inout ArenaBall, dt rawDelta: TimeInterval) -> ArenaStepResult {
         let dt = min(max(rawDelta, 0), 0.05)
         ball.x += ball.vx * dt
@@ -59,15 +67,30 @@ enum ArenaPhysics {
         kick(&ball, from: player, direction: direction, power: 0.55)
     }
 
-    static func contact(_ ball: inout ArenaBall, player: CGPoint, direction: CGPoint) {
+    static func powerKick(_ ball: inout ArenaBall, from player: CGPoint,
+                          toward goal: FieldEdge) -> Bool {
+        guard hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
+        let targetX = goal == .right ? 0.98 : 0.02
+        let dx = targetX - ball.x
+        let dy = 0.5 - ball.y
+        let length = hypot(dx, dy)
+        guard length > 0.01 else { return false }
+        ball.vx = dx / length * 2.2
+        ball.vy = dy / length * 2.2
+        return true
+    }
+
+    @discardableResult
+    static func contact(_ ball: inout ArenaBall, player: CGPoint, direction: CGPoint) -> Bool {
         let dx = ball.x - player.x
         let dy = ball.y - player.y
         let distance = hypot(dx, dy)
-        guard distance < 0.038 else { return }
+        guard distance < 0.038 else { return false }
         let angle = distance > 0.001 ? atan2(dy, dx) : atan2(direction.y, direction.x)
         ball.x = min(max(player.x + cos(angle) * 0.038, 0.04), 0.96)
         ball.y = min(max(player.y + sin(angle) * 0.038, 0.08), 0.92)
         ball.vx = cos(angle) * max(abs(ball.vx), 0.16)
         ball.vy = sin(angle) * max(abs(ball.vy), 0.16)
+        return true
     }
 }

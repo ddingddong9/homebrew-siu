@@ -4,14 +4,15 @@
 
 ## 설치
 
-앱 버전은 실기기 2대 검증 전 베타판입니다. 저장소와 릴리스는 비공개이므로 접근 권한을 받은 두 사람만 설치할 수 있습니다. **두 Mac 모두 같은 앱 베타판**을 사용하세요.
+앱 버전은 실기기 2대 검증 전 베타판입니다. 저장소와 릴리스는 공개되어 있습니다. **두 Mac 모두 같은 앱 베타판**을 사용하세요.
 
 ```bash
-gh auth login
-gh release download v1.5.0-beta.1 -R ddingddong9/homebrew-siu --pattern 'siu-v1.5.0-beta.1-macos-app.zip'
+brew tap ddingddong9/siu
+brew trust --cask ddingddong9/siu/siu-app-beta
+brew install --cask siu-app-beta
 ```
 
-다운로드한 ZIP을 열고 `SIU.app`을 응용 프로그램 폴더로 드래그하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다. 예전 명령줄판이 필요 없다면 `brew uninstall siu-beta` 또는 `brew uninstall siu`로 제거할 수 있습니다. 비공개 GitHub 릴리스 파일은 일반적인 공개 Homebrew 설치 명령으로 다운로드할 수 없습니다.
+Homebrew가 비공식 탭의 cask를 처음 읽을 때 신뢰 명령이 필요합니다. 이 명령은 SIU cask만 신뢰합니다. 이미 설치했다면 SIU를 종료한 뒤 `brew update && brew upgrade --cask siu-app-beta`로 업데이트하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다.
 
 이 앱 베타는 macOS 13 이상, Apple Silicon 또는 Intel Mac을 지원합니다. Xcode는 필요하지 않습니다. 현재 배포 파일은 임시 서명이며 Apple 공증은 아직 받지 않았습니다. macOS가 첫 실행을 막으면 앱의 출처를 직접 확인한 뒤 macOS **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용할 수 있습니다. 보안 경고를 무시할지 결정하기 전에 GitHub 릴리스와 체크섬을 확인하세요.
 
@@ -40,7 +41,9 @@ siu pair
 ```bash
 brew uninstall mac-arrow
 brew untap ddingddong9/mac-arrow
-gh release download v1.5.0-beta.1 -R ddingddong9/homebrew-siu --pattern 'siu-v1.5.0-beta.1-macos-app.zip'
+brew tap ddingddong9/siu
+brew trust --cask ddingddong9/siu/siu-app-beta
+brew install --cask siu-app-beta
 ```
 
 ## 상대 연결 설정
@@ -73,7 +76,9 @@ swift build -c release
 - 선수 발밑의 화살표가 현재 바라보는 방향을 표시합니다. 슈팅·태클은 그 방향으로 진행합니다. 별도 마우스·`Q`/`E` 조준은 없습니다.
 - `A`를 누르면 태클해 가까운 공을 밀어내고, 상대 선수와 닿으면 잠깐 움직임을 막습니다. 태클에는 재사용 대기시간이 있습니다.
 - 공 가까이 이동한 뒤 `Space`를 누르면 바라보는 방향으로 공을 찹니다.
-- 공은 위에서 내려다본 필드 기준으로 마찰·경계 반사를 적용해 움직입니다. 어느 골대에 들어갔는지에 따라 득점하고 중앙에서 다시 시작합니다. 경기 시작자의 Mac이 공과 득점을 계산해 상대 Mac에 동기화합니다.
+- `Esc`를 누르면 양쪽 경기가 멈추고 경기 설정창이 열립니다. 어느 쪽에서든 계속하기를 누르면 함께 재개합니다. 설정창에서 화면 효과를 끌 수도 있습니다.
+- 태클에 맞은 선수는 넘어졌다가 일어나며, 그 동안 움직이거나 슛·태클을 할 수 없습니다.
+- 공은 위에서 내려다본 필드 기준으로 마찰·경계 반사를 적용해 움직입니다. 골을 넣으면 양쪽 선수가 시작 위치로 돌아가고 실점한 쪽이 중앙에서 선공합니다. 경기 시작자의 Mac이 공과 득점을 계산해 상대 Mac에 동기화합니다.
 - **모든 축구공 지우기**는 기존 일회성 공 전송 모드에서 화면에 남은 공을 초기화합니다.
 
 별도 명령줄판을 설치했다면 명령어로도 바로 찰 수 있습니다.
@@ -93,7 +98,7 @@ swift build -c release
 .build/release/siu self-test
 .build/release/siu asset-check
 .build/release/siu demo
-Scripts/package-app.sh 1.5.0-beta.1
+Scripts/package-app.sh 1.6.0-beta.1
 ```
 
 이동·달리기·슈팅·태클의 44개 투명 스프라이트는 `Sources/MacArrow/Resources`에 포함되어 있습니다. 뒤쪽 슈팅 컷은 사용자가 제공한 GIF에서 추출했고, 나머지는 그 캐릭터를 참고해 생성했습니다. 자산의 사용 범위는 [ASSET_NOTICE.md](ASSET_NOTICE.md)를 참고하세요. 경기 패킷은 수신 확인·재전송을 하며 공·선수 위치와 점수·남은 시간을 주기적으로 맞춥니다. 실제 Mac 두 대에서의 전체 경기 검증과 지연·충돌 조정은 아직 필요합니다. 1대1 경기만 지원하며, 페어링 코드로 메시지를 인증하지만 계정 인증과 암호화는 없습니다. 현재 화면은 2D 경기장 베타로, 상용 FIFA처럼 3D 카메라·선수 AI·패스·파울 규칙까지 구현한 것은 아닙니다.

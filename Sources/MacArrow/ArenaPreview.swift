@@ -12,19 +12,48 @@ final class ArenaPreviewController {
     private var startedAt: TimeInterval = 0
     private var kickoffAt: TimeInterval = 0
     private var lastOpponentKickAt: TimeInterval = 0
+    private var lastOpponentTackleAt: TimeInterval = 0
     private var goalNoticeUntil: TimeInterval = 0
+    private var kickoffOwner: FieldEdge? = .left
+    private var opponentFallenUntil: TimeInterval = 0
+    private var pausedAt: TimeInterval?
+    private var powerReleaseAt: TimeInterval = 0
+    private var powerPending = false
+    private var fireUntil: TimeInterval = 0
 
     init() {
         arena.onKick = { [weak self] position, direction in
             guard let self else { return }
+            guard self.pausedAt == nil, !self.powerPending,
+                  ProcessInfo.processInfo.systemUptime >= self.kickoffAt,
+                  ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left) else { return }
             if !ArenaPhysics.kick(&self.ball, from: position, direction: direction) {
                 self.arena.showFeedback("공에 더 가까이 가세요!")
-            }
+            } else { self.kickoffOwner = nil }
         }
         arena.onTackle = { [weak self] position, direction in
             guard let self else { return }
+            guard self.pausedAt == nil, self.kickoffOwner == nil else { return }
             _ = ArenaPhysics.tackle(&self.ball, from: position, direction: direction)
+            if hypot(position.x - self.opponent.x, position.y - self.opponent.y) < 0.08 {
+                self.opponentFallenUntil = ProcessInfo.processInfo.systemUptime + 1.55
+                self.arena.stunRemote()
+            }
         }
+        arena.onPowerShot = { [weak self] position in
+            guard let self else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard self.pausedAt == nil, !self.powerPending, now >= self.kickoffAt,
+                  ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left),
+                  hypot(self.ball.x - position.x, self.ball.y - position.y) < 0.075 else { return }
+            self.powerPending = true
+            self.powerReleaseAt = now + 0.65
+            self.fireUntil = self.powerReleaseAt + 0.9
+            self.arena.startPowerCinematic(local: true)
+        }
+        arena.onPauseToggle = { [weak self] in self?.togglePause() }
+        arena.onResume = { [weak self] in self?.resume() }
+        arena.onEnd = { [weak self] in self?.stop() }
         arena.onClose = { [weak self] in self?.stop() }
     }
 
@@ -38,8 +67,14 @@ final class ArenaPreviewController {
         myScore = 0
         theirScore = 0
         kickoffAt = 0
+        kickoffOwner = .left
         lastOpponentKickAt = 0
+        lastOpponentTackleAt = 0
         goalNoticeUntil = 0
+        opponentFallenUntil = 0
+        pausedAt = nil
+        powerPending = false
+        fireUntil = 0
         startedAt = ProcessInfo.processInfo.systemUptime
         lastTick = startedAt
         arena.window?.title = "SIU — 경기장 미리보기 (AI 연습)"
@@ -52,50 +87,111 @@ final class ArenaPreviewController {
     func stop() {
         timer?.invalidate()
         timer = nil
+        pausedAt = nil
         arena.hide()
+    }
+
+    private func togglePause() {
+        if pausedAt == nil {
+            pausedAt = ProcessInfo.processInfo.systemUptime
+            arena.setPaused(true)
+        } else { resume() }
+    }
+
+    private func resume() {
+        guard let pausedAt else { return }
+        let elapsed = ProcessInfo.processInfo.systemUptime - pausedAt
+        self.pausedAt = nil
+        startedAt += elapsed
+        kickoffAt += elapsed
+        if goalNoticeUntil > 0 { goalNoticeUntil += elapsed }
+        if opponentFallenUntil > 0 { opponentFallenUntil += elapsed }
+        if powerPending { powerReleaseAt += elapsed; fireUntil += elapsed }
+        lastTick = ProcessInfo.processInfo.systemUptime
+        arena.setPaused(false, elapsed: elapsed)
     }
 
     private func tick() {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = min(now - lastTick, 0.05)
         lastTick = now
-        arena.advance(dt: dt)
+        if pausedAt != nil {
+            render(at: pausedAt!)
+            return
+        }
+        if powerPending && now >= powerReleaseAt {
+            powerPending = false
+            if ArenaPhysics.powerKick(&ball, from: arena.localPosition, toward: .right) {
+                kickoffOwner = nil
+            }
+        }
+        arena.setFireBall(now >= powerReleaseAt && now < fireUntil)
+        if now >= kickoffAt && !powerPending { arena.advance(dt: dt) }
         let delta = CGPoint(x: ball.x - opponent.x, y: ball.y - opponent.y)
         let distance = hypot(delta.x, delta.y)
         let direction = distance > 0.001
             ? CGPoint(x: delta.x / distance, y: delta.y / distance) : CGPoint(x: -1, y: 0)
-        if distance > 0.055 {
+        if now >= kickoffAt && !powerPending && now >= opponentFallenUntil && distance > 0.055 {
             opponent.x = min(max(opponent.x + direction.x * dt * 0.22, 0.065), 0.935)
             opponent.y = min(max(opponent.y + direction.y * dt * 0.22, 0.10), 0.90)
         }
         arena.setRemote(position: opponent, direction: direction)
-        if now >= kickoffAt {
-            if distance < 0.08, now - lastOpponentKickAt > 1.2,
+        if now >= kickoffAt && !powerPending {
+            if now >= opponentFallenUntil && ArenaPhysics.mayTakeKickoff(owner: kickoffOwner, player: .right),
+               distance < 0.08, now - lastOpponentKickAt > 1.2,
                ArenaPhysics.kick(&ball, from: opponent, direction: CGPoint(x: -1, y: 0)) {
                 lastOpponentKickAt = now
+                kickoffOwner = nil
                 arena.animateRemoteKick()
+            }
+            if now >= opponentFallenUntil && kickoffOwner == nil,
+               now - lastOpponentTackleAt > 3,
+               hypot(opponent.x - arena.localPosition.x,
+                     opponent.y - arena.localPosition.y) < 0.07 {
+                lastOpponentTackleAt = now
+                arena.animateRemoteTackle()
+                arena.stun()
+                _ = ArenaPhysics.tackle(&ball, from: opponent, direction: direction)
             }
             switch ArenaPhysics.step(&ball, dt: dt) {
             case .inPlay:
-                ArenaPhysics.contact(&ball, player: arena.localPosition,
-                                     direction: arena.localDirection)
-                ArenaPhysics.contact(&ball, player: opponent, direction: direction)
+                if kickoffOwner == nil || kickoffOwner == .left {
+                    if ArenaPhysics.contact(&ball, player: arena.localPosition,
+                                            direction: arena.localDirection), kickoffOwner == .left {
+                        kickoffOwner = nil
+                    }
+                }
+                if now >= opponentFallenUntil && (kickoffOwner == nil || kickoffOwner == .right) {
+                    if ArenaPhysics.contact(&ball, player: opponent, direction: direction),
+                       kickoffOwner == .right { kickoffOwner = nil }
+                }
             case .goalAtLeft:
                 theirScore += 1
-                resetAfterGoal(now: now)
+                resetAfterGoal(now: now, conceding: .left)
             case .goalAtRight:
                 myScore += 1
-                resetAfterGoal(now: now)
+                resetAfterGoal(now: now, conceding: .right)
             }
         }
-        arena.render(ball: ball, myScore: myScore, theirScore: theirScore,
-                     remaining: max(0, 300 - (now - startedAt)),
-                     status: now < goalNoticeUntil ? "GOAL!" : "")
+        render(at: now)
     }
 
-    private func resetAfterGoal(now: TimeInterval) {
+    private func render(at now: TimeInterval) {
+        arena.render(ball: ball, myScore: myScore, theirScore: theirScore,
+                     remaining: max(0, 300 - (now - startedAt)),
+                     status: now < goalNoticeUntil ? "GOAL!" :
+                        now < kickoffAt ? (kickoffOwner == .left ? "내 선공" : "상대 선공") : "")
+    }
+
+    private func resetAfterGoal(now: TimeInterval, conceding side: FieldEdge) {
         ball = .kickoff
-        kickoffAt = now + 1.4
+        kickoffOwner = side
+        kickoffAt = now + 2
         goalNoticeUntil = now + 2
+        fireUntil = 0
+        arena.setFireBall(false)
+        arena.resetForKickoff(conceding: side)
+        opponent = CGPoint(x: ArenaPhysics.startingX(conceding: side).right, y: 0.5)
+        arena.setRemote(position: opponent, direction: CGPoint(x: -1, y: 0))
     }
 }
