@@ -51,7 +51,7 @@ private final class MatchHUDView: NSView {
     var status = ""
     var remotePlayers: [CGPoint] = []
     private let character: NSImage? = {
-        guard let url = Bundle.module.url(forResource: "move-04", withExtension: "png") else { return nil }
+        guard let url = ResourceBundle.images.url(forResource: "move-04", withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
     }()
 

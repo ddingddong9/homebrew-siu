@@ -302,7 +302,7 @@ private final class PlayerView: NSView {
         aimVector = heading.vector
         func frames(_ name: String, count: Int) -> [NSImage] {
             (1...count).compactMap { index in
-                guard let url = Bundle.module.url(forResource: String(format: "%@-%02d", name, index), withExtension: "png") else { return nil }
+                guard let url = ResourceBundle.images.url(forResource: String(format: "%@-%02d", name, index), withExtension: "png") else { return nil }
                 return NSImage(contentsOf: url)
             }
         }

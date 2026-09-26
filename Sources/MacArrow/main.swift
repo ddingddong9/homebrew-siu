@@ -3,6 +3,67 @@ import Foundation
 
 private let defaultPort: UInt16 = 45_678
 
+private func prepareAppPairing() -> Bool {
+    if RoomSecretStore.load() != nil { return true }
+    NSApplication.shared.activate(ignoringOtherApps: true)
+    let choice = NSAlert()
+    choice.messageText = "SIU 페어링"
+    choice.informativeText = "경기를 연결할 두 Mac에 같은 코드를 설정하세요."
+    choice.addButton(withTitle: "새 코드 만들기")
+    choice.addButton(withTitle: "친구 코드 입력")
+    choice.addButton(withTitle: "취소")
+    switch choice.runModal() {
+    case .alertFirstButtonReturn:
+        do {
+            let code = RoomSecretStore.code(for: try RoomSecretStore.generate())
+            let result = NSAlert()
+            result.messageText = "페어링 코드 생성 완료"
+            result.informativeText = "친구 Mac의 SIU에서 ‘친구 코드 입력’을 선택하고 아래 코드를 입력하세요."
+            let field = NSTextField(string: code)
+            field.isEditable = false
+            field.isSelectable = true
+            field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+            result.accessoryView = field
+            result.addButton(withTitle: "코드 복사 후 시작")
+            result.addButton(withTitle: "시작")
+            if result.runModal() == .alertFirstButtonReturn {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(code, forType: .string)
+            }
+            return true
+        } catch {
+            NSAlert(error: error).runModal()
+            return false
+        }
+    case .alertSecondButtonReturn:
+        let entry = NSAlert()
+        entry.messageText = "친구 코드 입력"
+        entry.informativeText = "친구 Mac에 표시된 32자리 코드를 입력하세요."
+        let field = NSTextField(string: "")
+        field.frame = NSRect(x: 0, y: 0, width: 320, height: 24)
+        entry.accessoryView = field
+        entry.addButton(withTitle: "저장 후 시작")
+        entry.addButton(withTitle: "취소")
+        guard entry.runModal() == .alertFirstButtonReturn else { return false }
+        guard let key = RoomSecretStore.parse(field.stringValue) else {
+            let error = NSAlert()
+            error.messageText = "페어링 코드가 올바르지 않습니다"
+            error.informativeText = "32자리의 영문·숫자 코드를 다시 확인하세요."
+            error.runModal()
+            return false
+        }
+        do {
+            try RoomSecretStore.save(key)
+            return true
+        } catch {
+            NSAlert(error: error).runModal()
+            return false
+        }
+    default:
+        return false
+    }
+}
+
 private func usage() {
     print("""
     siu — kick a football from one Mac into another Mac's screen
@@ -42,7 +103,8 @@ private func parsedY(_ arguments: [String]) -> Double {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else {
+let launchedAsApp = Bundle.main.bundleURL.pathExtension == "app"
+guard let command = arguments.first ?? (launchedAsApp ? "start" : nil) else {
     usage()
     exit(0)
 }
@@ -110,7 +172,8 @@ case "start", "receive":
         exit(2)
     }
     let app = NSApplication.shared
-    app.setActivationPolicy(.accessory)
+    app.setActivationPolicy(launchedAsApp ? .regular : .accessory)
+    if launchedAsApp && !prepareAppPairing() { exit(0) }
     let overlay = MainActor.assumeIsolated { BallOverlayController() }
     do {
         let matchTransport = try MatchTransport(port: port + 1)
@@ -191,7 +254,7 @@ case "asset-check":
     for (name, count) in expected {
         for index in 1...count {
             let filename = String(format: "%@-%02d", name, index)
-            guard let url = Bundle.module.url(forResource: filename, withExtension: "png"),
+            guard let url = ResourceBundle.images.url(forResource: filename, withExtension: "png"),
                   let image = NSImage(contentsOf: url),
                   let bitmap = NSBitmapImageRep(data: try Data(contentsOf: url)),
                   image.size.width > 0, image.size.height > 0, bitmap.hasAlpha else {
