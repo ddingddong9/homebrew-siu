@@ -11,6 +11,7 @@ class Siu < Formula
   end
 
   license "MIT"
+  conflicts_with "siu-beta", because: "both install the siu executable"
 
   def install
     bin.install "siu"
