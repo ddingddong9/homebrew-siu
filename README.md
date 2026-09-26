@@ -4,20 +4,22 @@
 
 ## 설치
 
-새 경기 기능은 실기기 2대 검증 전 베타판입니다. **두 Mac 모두 같은 베타판**을 설치하세요. 기존 안정판 `siu`가 설치되어 있다면 먼저 제거합니다.
+앱 버전은 실기기 2대 검증 전 베타판입니다. 저장소와 릴리스는 비공개이므로 접근 권한을 받은 두 사람만 설치할 수 있습니다. **두 Mac 모두 같은 앱 베타판**을 사용하세요.
 
 ```bash
-brew uninstall siu
-brew install ddingddong9/siu/siu-beta
+gh auth login
+gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
 ```
 
-베타판이 아직 Homebrew에서 보이지 않으면 아래 개발 명령으로 이 저장소에서 실행할 수 있습니다. 기존 안정판을 계속 쓰려면 `brew install ddingddong9/siu/siu`를 사용하세요.
+다운로드한 ZIP을 열고 `SIU.app`을 응용 프로그램 폴더로 드래그하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다. 예전 명령줄판이 필요 없다면 `brew uninstall siu-beta` 또는 `brew uninstall siu`로 제거할 수 있습니다. 비공개 GitHub 릴리스 파일은 일반적인 공개 Homebrew 설치 명령으로 다운로드할 수 없습니다.
 
-이 베타판은 macOS 13 이상, Apple Silicon 또는 Intel Mac을 지원합니다.
+이 앱 베타는 macOS 13 이상, Apple Silicon 또는 Intel Mac을 지원합니다. Xcode는 필요하지 않습니다. 현재 배포 파일은 임시 서명이며 Apple 공증은 아직 받지 않았습니다. macOS가 첫 실행을 막으면 앱의 출처를 직접 확인한 뒤 macOS **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용할 수 있습니다. 보안 경고를 무시할지 결정하기 전에 GitHub 릴리스와 체크섬을 확인하세요.
 
 ## 두 Mac 페어링
 
-경기 패킷 인증을 위해 두 Mac에 같은 페어링 코드가 필요합니다. 첫 Mac에서 코드를 만들고, 신뢰하는 방법으로 친구에게 전달하세요.
+경기 패킷 인증을 위해 두 Mac에 같은 페어링 코드가 필요합니다. 앱을 처음 열면 첫 Mac에서 **새 코드 만들기**, 친구 Mac에서 **친구 코드 입력**을 선택할 수 있습니다. 코드는 신뢰하는 방법으로만 전달하세요.
+
+명령줄 베타판을 사용한다면 다음 명령도 가능합니다.
 
 ```bash
 siu pair-code
@@ -38,12 +40,12 @@ siu pair
 ```bash
 brew uninstall mac-arrow
 brew untap ddingddong9/mac-arrow
-brew install ddingddong9/siu/siu-beta
+gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
 ```
 
 ## 화면 배치
 
-두 Mac 모두 화면 위치와 상대방의 Bonjour 호스트명 또는 IP를 설정합니다.
+두 Mac 모두 화면 위치와 상대방의 Bonjour 호스트명 또는 IP를 설정합니다. SIU를 열고 메뉴바의 `⚽️` 아이콘에서 **화면 배치…**를 선택하세요. 명령줄판은 다음 명령을 사용할 수 있습니다.
 
 ```bash
 siu setup
@@ -53,7 +55,7 @@ siu setup
 
 ## 실행
 
-두 Mac 모두 메뉴바 앱을 실행합니다. Homebrew 설치 후에는 `siu start`를, 소스에서 시험할 때는 다음 명령을 사용합니다.
+두 Mac 모두 응용 프로그램의 **SIU**를 엽니다. 앱은 Dock과 메뉴바에 표시됩니다. 소스에서 명령줄판을 시험할 때는 다음 명령을 사용합니다.
 
 ```bash
 swift build -c release
@@ -74,7 +76,7 @@ swift build -c release
 - 경기 중 공은 중력·마찰·반사를 적용해 움직입니다. 화면의 이웃 경계를 넘으면 상대 Mac으로 이어지고, 자기 골대 안으로 들어가면 상대 득점입니다.
 - **모든 축구공 지우기**는 기존 일회성 공 전송 모드에서 화면에 남은 공을 초기화합니다.
 
-명령어로도 바로 찰 수 있습니다.
+별도 명령줄판을 설치했다면 명령어로도 바로 찰 수 있습니다.
 
 ```bash
 siu kick left
@@ -82,7 +84,7 @@ siu kick right --y 0.25
 siu kick friends-mac.local
 ```
 
-처음 실행할 때 macOS가 네트워크 연결을 물으면 허용해야 합니다. 방화벽을 사용하는 경우 기존 공 전송 UDP `45678`과 경기·연결 확인 UDP `45679`를 허용하세요. 터미널에서는 `siu check friends-mac.local`로 연결을 확인할 수 있습니다. 양쪽 코드가 다르면 연결 확인이 실패합니다.
+처음 실행할 때 macOS가 네트워크 연결을 물으면 허용해야 합니다. 방화벽을 사용하는 경우 기존 공 전송 UDP `45678`과 경기·연결 확인 UDP `45679`를 허용하세요. 앱 메뉴의 **연결 확인**으로 확인하거나, 명령줄판에서 `siu check friends-mac.local`을 사용할 수 있습니다. 양쪽 코드가 다르면 연결 확인이 실패합니다.
 
 ## 개발
 
@@ -91,6 +93,7 @@ swift build -c release
 .build/release/siu self-test
 .build/release/siu asset-check
 .build/release/siu demo
+Scripts/package-app.sh 1.4.0-beta.3
 ```
 
 이동·달리기·슈팅·태클의 44개 투명 스프라이트는 `Sources/MacArrow/Resources`에 포함되어 있습니다. 뒤쪽 슈팅 컷은 사용자가 제공한 GIF에서 추출했고, 나머지는 그 캐릭터를 참고해 생성했습니다. 자산의 사용 범위는 [ASSET_NOTICE.md](ASSET_NOTICE.md)를 참고하세요. 경기 패킷은 수신 확인·재전송을 하며 점수·남은 시간을 주기적으로 다시 맞춥니다. 실제 Mac 두 대에서의 전체 경기 검증은 아직 필요하고, 상대 선수 태클은 화면 경계 근처에서만 작동합니다. 3명 이상 배치는 가능하지만 공 이동과 득점 규칙은 2명 경기 기준입니다. 페어링 코드로 경기 메시지를 인증하지만 계정 인증과 암호화는 없습니다.
