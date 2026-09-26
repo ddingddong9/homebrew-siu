@@ -4,13 +4,14 @@
 
 ## 설치
 
-앱 버전은 실기기 2대 검증 전 베타판입니다. **두 Mac 모두 같은 앱 베타판**을 설치하세요.
+앱 버전은 실기기 2대 검증 전 베타판입니다. 저장소와 릴리스는 비공개이므로 접근 권한을 받은 두 사람만 설치할 수 있습니다. **두 Mac 모두 같은 앱 베타판**을 사용하세요.
 
 ```bash
-brew install --cask ddingddong9/siu/siu-app-beta
+gh auth login
+gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
 ```
 
-`/Applications/SIU.app`이 생깁니다. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다. 예전 명령줄판이 필요 없다면 `brew uninstall siu-beta` 또는 `brew uninstall siu`로 제거할 수 있습니다.
+다운로드한 ZIP을 열고 `SIU.app`을 응용 프로그램 폴더로 드래그하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다. 예전 명령줄판이 필요 없다면 `brew uninstall siu-beta` 또는 `brew uninstall siu`로 제거할 수 있습니다. 비공개 GitHub 릴리스 파일은 일반적인 공개 Homebrew 설치 명령으로 다운로드할 수 없습니다.
 
 이 앱 베타는 macOS 13 이상, Apple Silicon 또는 Intel Mac을 지원합니다. Xcode는 필요하지 않습니다. 현재 배포 파일은 임시 서명이며 Apple 공증은 아직 받지 않았습니다. macOS가 첫 실행을 막으면 앱의 출처를 직접 확인한 뒤 macOS **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용할 수 있습니다. 보안 경고를 무시할지 결정하기 전에 GitHub 릴리스와 체크섬을 확인하세요.
 
@@ -39,7 +40,7 @@ siu pair
 ```bash
 brew uninstall mac-arrow
 brew untap ddingddong9/mac-arrow
-brew install --cask ddingddong9/siu/siu-app-beta
+gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
 ```
 
 ## 화면 배치
