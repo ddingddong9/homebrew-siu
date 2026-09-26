@@ -1,4 +1,5 @@
 import AppKit
+import Network
 
 @MainActor
 final class MatchCoordinator {
@@ -41,6 +42,7 @@ final class MatchCoordinator {
     private var lastKickAt: TimeInterval = 0
     private var lastTackleAt: TimeInterval = 0
     private var seenMessageIDs = Set<UUID>()
+    private var roomPeerEndpoint: NWEndpoint?
 
     var isRunning: Bool { matchID != nil }
 
@@ -61,8 +63,10 @@ final class MatchCoordinator {
 
     func registerPeer(_ id: UUID, host: String) { _ = (id, host) }
 
+    func setRoomPeer(_ endpoint: NWEndpoint?) { roomPeerEndpoint = endpoint }
+
     func start(duration minutes: Int) -> Bool {
-        guard !isRunning, targetHost() != nil else { return false }
+        guard !isRunning, targetEndpoint() != nil else { return false }
         let id = UUID()
         let seconds = TimeInterval(min(max(minutes, 1), 90) * 60)
         begin(id: id, duration: seconds, elapsed: 0, host: true)
@@ -522,14 +526,15 @@ final class MatchCoordinator {
                           remaining: max(0, duration - ((pausedAt ?? ProcessInfo.processInfo.systemUptime) - startedAt))))
     }
 
-    private func targetHost() -> String? {
+    private func targetEndpoint() -> NWEndpoint? {
+        if let roomPeerEndpoint { return roomPeerEndpoint }
         let peers = ScreenLayoutStore.load().screens.filter { !$0.isLocal && !$0.host.isEmpty }
-        return peers.count == 1 ? peers[0].host : nil
+        return peers.count == 1 ? transport.endpoint(for: peers[0].host) : nil
     }
 
     private func send(_ message: MatchMessage, reportFailure: Bool = false) {
-        guard let address = targetHost() else { return }
-        transport.send(message, to: address) { [weak self] error in
+        guard let endpoint = targetEndpoint() else { return }
+        transport.send(message, to: endpoint) { [weak self] error in
             guard reportFailure, error != nil else { return }
             self?.onConnectionIssue?("상대 연결 실패")
             if message.kind == .start { self?.finish() }

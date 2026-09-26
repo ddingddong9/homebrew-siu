@@ -80,11 +80,34 @@ struct MatchEnvelope: Codable {
 }
 
 final class MatchTransport {
+    static let roomServiceType = "_siu-match._udp"
     private let listener: NWListener
     private let port: NWEndpoint.Port
     private let outboundPort: NWEndpoint.Port
-    private let roomKey: Data
+    private let keyLock = NSLock()
+    private var roomKey: Data
     var onMessage: ((MatchMessage) -> Void)?
+    var onPeerPing: ((NWEndpoint, UUID) -> Void)?
+
+    var currentKey: Data {
+        keyLock.lock()
+        defer { keyLock.unlock() }
+        return roomKey
+    }
+
+    func useRoomKey(_ key: Data) {
+        precondition(key.count == 16)
+        keyLock.lock()
+        roomKey = key
+        keyLock.unlock()
+    }
+
+    func advertiseRoom(_ active: Bool) {
+        listener.service = active
+            ? NWListener.Service(name: "SIU-\(GameIdentity.localID.uuidString.prefix(8))",
+                                 type: Self.roomServiceType)
+            : nil
+    }
 
     init(port: UInt16, remotePort: UInt16? = nil, roomKey: Data? = nil) throws {
         guard let nwPort = NWEndpoint.Port(rawValue: port),
@@ -104,8 +127,9 @@ final class MatchTransport {
         listener.newConnectionHandler = { [weak self] connection in
             connection.start(queue: .global(qos: .userInitiated))
             connection.receiveMessage { [weak self] data, _, _, _ in
-                guard let self, let data,
-                      let message = MatchEnvelope.open(data, key: self.roomKey),
+                guard let self, let data else { connection.cancel(); return }
+                let key = self.currentKey
+                guard let message = MatchEnvelope.open(data, key: key),
                       message.version == MatchMessage.protocolVersion,
                       abs(message.sentAt.timeIntervalSinceNow) < 30 else {
                     connection.cancel()
@@ -113,12 +137,16 @@ final class MatchTransport {
                 }
                 if message.kind == .ping {
                     let response = MatchMessage(kind: .pong, id: message.id)
-                    let encoded = MatchEnvelope.seal(response, key: self.roomKey)
+                    let encoded = MatchEnvelope.seal(response, key: key)
                     connection.send(content: encoded, completion: .contentProcessed { _ in connection.cancel() })
+                    if case .hostPort(let host, _) = connection.endpoint {
+                        let peerEndpoint = NWEndpoint.hostPort(host: host, port: self.outboundPort)
+                        DispatchQueue.main.async { self.onPeerPing?(peerEndpoint, message.senderID) }
+                    }
                 } else {
                     guard message.kind != .pong, message.kind != .ack else { connection.cancel(); return }
                     let ack = MatchMessage(kind: .ack, id: message.id)
-                    let encoded = MatchEnvelope.seal(ack, key: self.roomKey)
+                    let encoded = MatchEnvelope.seal(ack, key: key)
                     connection.send(content: encoded, completion: .contentProcessed { _ in connection.cancel() })
                     DispatchQueue.main.async { self.onMessage?(message) }
                 }
@@ -132,12 +160,22 @@ final class MatchTransport {
 
     func stop() { listener.cancel() }
 
+    func endpoint(for host: String) -> NWEndpoint {
+        .hostPort(host: NWEndpoint.Host(host), port: outboundPort)
+    }
+
     func send(_ message: MatchMessage, to host: String, completion: ((Error?) -> Void)? = nil) {
-        guard let data = MatchEnvelope.seal(message, key: roomKey) else {
+        send(message, to: endpoint(for: host), completion: completion)
+    }
+
+    func send(_ message: MatchMessage, to endpoint: NWEndpoint,
+              completion: ((Error?) -> Void)? = nil) {
+        let key = currentKey
+        guard let data = MatchEnvelope.seal(message, key: key) else {
             completion?(BallNetworkingError.encodingFailed)
             return
         }
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: outboundPort, using: .udp)
+        let connection = NWConnection(to: endpoint, using: .udp)
         let queue = DispatchQueue(label: "siu.match.send.\(message.id.uuidString)")
         var attempts = 0
         var finished = false
@@ -164,7 +202,7 @@ final class MatchTransport {
             case .ready:
                 connection.receiveMessage { response, _, _, _ in
                     guard let response,
-                          let ack = MatchEnvelope.open(response, key: self.roomKey),
+                          let ack = MatchEnvelope.open(response, key: key),
                           ack.kind == .ack, ack.id == message.id else {
                         finish(BallNetworkingError.timedOut)
                         return
@@ -181,9 +219,14 @@ final class MatchTransport {
     }
 
     func ping(host: String, completion: @escaping (UUID?) -> Void) {
+        ping(endpoint: endpoint(for: host), completion: completion)
+    }
+
+    func ping(endpoint: NWEndpoint, completion: @escaping (UUID?) -> Void) {
         let request = MatchMessage(kind: .ping)
-        guard let data = MatchEnvelope.seal(request, key: roomKey) else { completion(nil); return }
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: outboundPort, using: .udp)
+        let key = currentKey
+        guard let data = MatchEnvelope.seal(request, key: key) else { completion(nil); return }
+        let connection = NWConnection(to: endpoint, using: .udp)
         let lock = NSLock()
         var finished = false
         func finish(_ peerID: UUID?) {
@@ -202,7 +245,7 @@ final class MatchTransport {
                     if error != nil { finish(nil); return }
                     connection.receiveMessage { response, _, _, _ in
                         guard let response,
-                              let message = MatchEnvelope.open(response, key: self.roomKey),
+                              let message = MatchEnvelope.open(response, key: key),
                               message.kind == .pong, message.id == request.id else { finish(nil); return }
                         finish(message.senderID)
                     }
