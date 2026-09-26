@@ -289,7 +289,7 @@ private final class PlayerView: NSView {
     private let tackleBackFrames: [NSImage]
     private var pressedKeys = Set<UInt16>()
     private var sprintHeld = false
-    private var mouseAimHeld = false
+    private var precisionAimActive = false
     private var timer: Timer?
     private var runPhase: CGFloat = 0
     private var kickStartedAt: TimeInterval = -.infinity
@@ -329,13 +329,14 @@ private final class PlayerView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func setFacing(_ direction: ShootDirection) {
+        precisionAimActive = false
         heading = direction == .left ? .left : .right
         aimVector = heading.vector
         needsDisplay = true
     }
 
     func setHeading(_ value: PlayerHeading) {
-        guard !mouseAimHeld else { return }
+        guard !precisionAimActive else { return }
         heading = value
         aimVector = value.vector
         needsDisplay = true
@@ -363,7 +364,12 @@ private final class PlayerView: NSView {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 123, 124, 125, 126: pressedKeys.insert(event.keyCode)
+        case 123, 124, 125, 126:
+            if !pressedKeys.contains(event.keyCode) { precisionAimActive = false }
+            pressedKeys.insert(event.keyCode)
+        case 12, 14: // Q / E: rotate aim without the mouse
+            pressedKeys.insert(event.keyCode)
+            precisionAimActive = true
         case 49: if !event.isARepeat { onKickAttempt?() }
         case 0: if !event.isARepeat { onTackleAttempt?() } // A
         default: super.keyDown(with: event)
@@ -377,7 +383,6 @@ private final class PlayerView: NSView {
 
     override func flagsChanged(with event: NSEvent) {
         sprintHeld = event.modifierFlags.contains(.shift)
-        mouseAimHeld = event.modifierFlags.contains(.option)
         super.flagsChanged(with: event)
     }
 
@@ -447,7 +452,7 @@ private final class PlayerView: NSView {
     }
 
     private func drawHint() {
-        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 이동 · ⌥ 마우스 조준 · SPACE · A")
+        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 · Q/E 조준 · Space 슛 · A 태클")
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
         NSString(string: text).draw(
             in: NSRect(x: 10, y: 365, width: 250, height: 22),
@@ -458,17 +463,7 @@ private final class PlayerView: NSView {
     }
 
     private func tick() {
-        if window?.isKeyWindow != true { pressedKeys.removeAll(); sprintHeld = false; mouseAimHeld = false }
-        if mouseAimHeld, let window {
-            let foot = CGPoint(x: window.frame.midX, y: window.frame.minY + 42)
-            let pointer = NSEvent.mouseLocation
-            let dx = pointer.x - foot.x, dy = pointer.y - foot.y
-            let length = hypot(dx, dy)
-            if length > 5 {
-                aimVector = CGPoint(x: dx / length, y: dy / length)
-                heading = PlayerHeading(dx: dx, dy: dy)
-            }
-        }
+        if window?.isKeyWindow != true { pressedKeys.removeAll(); sprintHeld = false; precisionAimActive = false }
         let dx = CGFloat((pressedKeys.contains(124) ? 1 : 0) - (pressedKeys.contains(123) ? 1 : 0))
         let dy = CGFloat((pressedKeys.contains(126) ? 1 : 0) - (pressedKeys.contains(125) ? 1 : 0))
         if !isStunned && (dx != 0 || dy != 0) {
@@ -476,6 +471,14 @@ private final class PlayerView: NSView {
             let length = hypot(dx, dy)
             onMove?(dx / length * speed, dy / length * speed)
             runPhase += 1
+        }
+        let turn = (pressedKeys.contains(14) ? 1 : 0) - (pressedKeys.contains(12) ? 1 : 0)
+        if !isStunned && turn != 0 {
+            let angle = CGFloat(turn) * .pi / 90 // 2 degrees per frame at 60 FPS
+            let cosine = cos(angle), sine = sin(angle)
+            aimVector = CGPoint(x: aimVector.x * cosine - aimVector.y * sine,
+                                y: aimVector.x * sine + aimVector.y * cosine)
+            heading = PlayerHeading(dx: aimVector.x, dy: aimVector.y)
         }
         feedbackFrames = max(0, feedbackFrames - 1)
         needsDisplay = true

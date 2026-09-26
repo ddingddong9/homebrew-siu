@@ -8,7 +8,7 @@
 
 ```bash
 gh auth login
-gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
+gh release download v1.4.0-beta.4 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.4-macos-app.zip'
 ```
 
 다운로드한 ZIP을 열고 `SIU.app`을 응용 프로그램 폴더로 드래그하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다. 예전 명령줄판이 필요 없다면 `brew uninstall siu-beta` 또는 `brew uninstall siu`로 제거할 수 있습니다. 비공개 GitHub 릴리스 파일은 일반적인 공개 Homebrew 설치 명령으로 다운로드할 수 없습니다.
@@ -40,7 +40,7 @@ siu pair
 ```bash
 brew uninstall mac-arrow
 brew untap ddingddong9/mac-arrow
-gh release download v1.4.0-beta.3 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.3-macos-app.zip'
+gh release download v1.4.0-beta.4 -R ddingddong9/homebrew-siu --pattern 'siu-v1.4.0-beta.4-macos-app.zip'
 ```
 
 ## 화면 배치
@@ -69,7 +69,7 @@ swift build -c release
 - 내 화면이 오른쪽이면 선수가 오른쪽 아래에서 왼쪽을 향합니다.
 - 내 화면이 왼쪽이면 선수가 왼쪽 아래에서 오른쪽을 향합니다.
 - 방향키 `← ↑ ↓ →`를 누르고 있는 동안 연속 이동합니다. 두 키를 함께 누르면 대각선으로 움직이며, 방향에 맞는 선수 포즈로 바뀝니다. `Shift`를 누르면 빠르게 달립니다.
-- `Option`을 누르는 동안 마우스 위치로 연속 각도 조준을 합니다. 실제 슈팅·태클 방향은 360도로 계산하지만 캐릭터 그림은 가장 가까운 8방향 포즈를 사용합니다.
+- 방향키로 이동하고 바라보는 방향을 정합니다. `Q`/`E`를 누르고 있으면 마우스 없이 좌우로 각도를 세밀하게 회전할 수 있습니다. 슈팅·태클 방향은 360도로 계산하고 캐릭터 그림은 가장 가까운 8방향 포즈를 사용합니다. 새 방향키를 누르면 조준이 그 이동 방향으로 돌아갑니다.
 - 이동 중에는 달리기 프레임이 재생됩니다. `A`를 누르면 슬라이딩 태클 애니메이션이 재생되고, 가까운 공을 진행 방향으로 밀어냅니다. 태클에는 약 1초 재사용 대기시간이 있습니다.
 - 두 선수가 맞닿은 화면 경계에 가까이 있을 때 태클하면 상대가 잠깐 움직이지 못하고, 경계 근처 공을 가로챌 수 있습니다. 상대가 경계에 오면 반투명 선수 표시가 나타납니다.
 - 공 가까이 이동한 뒤 `Space`를 누르면 바라보는 방향으로 공을 찹니다.
@@ -93,7 +93,7 @@ swift build -c release
 .build/release/siu self-test
 .build/release/siu asset-check
 .build/release/siu demo
-Scripts/package-app.sh 1.4.0-beta.3
+Scripts/package-app.sh 1.4.0-beta.4
 ```
 
 이동·달리기·슈팅·태클의 44개 투명 스프라이트는 `Sources/MacArrow/Resources`에 포함되어 있습니다. 뒤쪽 슈팅 컷은 사용자가 제공한 GIF에서 추출했고, 나머지는 그 캐릭터를 참고해 생성했습니다. 자산의 사용 범위는 [ASSET_NOTICE.md](ASSET_NOTICE.md)를 참고하세요. 경기 패킷은 수신 확인·재전송을 하며 점수·남은 시간을 주기적으로 다시 맞춥니다. 실제 Mac 두 대에서의 전체 경기 검증은 아직 필요하고, 상대 선수 태클은 화면 경계 근처에서만 작동합니다. 3명 이상 배치는 가능하지만 공 이동과 득점 규칙은 2명 경기 기준입니다. 페어링 코드로 경기 메시지를 인증하지만 계정 인증과 암호화는 없습니다.
