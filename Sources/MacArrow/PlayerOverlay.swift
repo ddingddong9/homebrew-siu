@@ -142,7 +142,6 @@ final class PlayerWindowController: NSWindowController {
         window.setFrameOrigin(origin)
         if dx < 0 { facing = .left }
         if dx > 0 { facing = .right }
-        playerView.setHeading(PlayerHeading(dx: dx, dy: dy))
     }
 
     private func tryKick() {
@@ -187,7 +186,7 @@ final class PlayerWindowController: NSWindowController {
         }
         let ballCenter = ball.center
         guard hypot(playerFoot.x - ballCenter.x, playerFoot.y - ballCenter.y) < 135 else { return }
-        ball.bump(along: playerView.heading.vector)
+        ball.bump(along: playerView.aimVector)
     }
 
     private func resetBall() {
@@ -289,7 +288,7 @@ private final class PlayerView: NSView {
     private let tackleBackFrames: [NSImage]
     private var pressedKeys = Set<UInt16>()
     private var sprintHeld = false
-    private var precisionAimActive = false
+    private var movementVelocity = CGPoint.zero
     private var timer: Timer?
     private var runPhase: CGFloat = 0
     private var kickStartedAt: TimeInterval = -.infinity
@@ -329,16 +328,8 @@ private final class PlayerView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     func setFacing(_ direction: ShootDirection) {
-        precisionAimActive = false
         heading = direction == .left ? .left : .right
         aimVector = heading.vector
-        needsDisplay = true
-    }
-
-    func setHeading(_ value: PlayerHeading) {
-        guard !precisionAimActive else { return }
-        heading = value
-        aimVector = value.vector
         needsDisplay = true
     }
 
@@ -357,6 +348,7 @@ private final class PlayerView: NSView {
     func stun() {
         stunnedUntil = ProcessInfo.processInfo.systemUptime + 0.6
         pressedKeys.removeAll()
+        movementVelocity = .zero
         needsDisplay = true
     }
 
@@ -365,11 +357,7 @@ private final class PlayerView: NSView {
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 123, 124, 125, 126:
-            if !pressedKeys.contains(event.keyCode) { precisionAimActive = false }
             pressedKeys.insert(event.keyCode)
-        case 12, 14: // Q / E: rotate aim without the mouse
-            pressedKeys.insert(event.keyCode)
-            precisionAimActive = true
         case 49: if !event.isARepeat { onKickAttempt?() }
         case 0: if !event.isARepeat { onTackleAttempt?() } // A
         default: super.keyDown(with: event)
@@ -389,7 +377,7 @@ private final class PlayerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         let now = ProcessInfo.processInfo.systemUptime
-        let isRunning = !pressedKeys.isDisjoint(with: [123, 124, 125, 126])
+        let isRunning = hypot(movementVelocity.x, movementVelocity.y) > 0.5
         let sinceKick = now - kickStartedAt
         let sinceTackle = now - tackleStartedAt
         let sprite: NSImage?
@@ -434,7 +422,31 @@ private final class PlayerView: NSView {
 
         if let sprite { drawSprite(sprite, height: height, bob: isRunning && sinceKick >= 0.72 && sinceTackle >= 0.55 ? abs(sin(runPhase * 0.8)) * 4 : 0) }
         else { NSString(string: "SIU").draw(at: CGPoint(x: 110, y: 180), withAttributes: [.font: NSFont.boldSystemFont(ofSize: 30)]) }
+        drawDirectionIndicator()
         drawHint()
+    }
+
+    private func drawDirectionIndicator() {
+        let center = CGPoint(x: bounds.midX, y: 42)
+        let radius: CGFloat = 25
+        let circle = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius,
+                                                 width: radius * 2, height: radius * 2))
+        NSColor.black.withAlphaComponent(0.54).setFill()
+        circle.fill()
+        circle.lineWidth = 2
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        circle.stroke()
+
+        let tip = CGPoint(x: center.x + aimVector.x * 19, y: center.y + aimVector.y * 19)
+        let base = CGPoint(x: center.x - aimVector.x * 6, y: center.y - aimVector.y * 6)
+        let wing = CGPoint(x: -aimVector.y * 6, y: aimVector.x * 6)
+        let arrow = NSBezierPath()
+        arrow.move(to: CGPoint(x: base.x + wing.x, y: base.y + wing.y))
+        arrow.line(to: tip)
+        arrow.line(to: CGPoint(x: base.x - wing.x, y: base.y - wing.y))
+        arrow.close()
+        NSColor.systemYellow.setFill()
+        arrow.fill()
     }
 
     private func drawSprite(_ image: NSImage, height: CGFloat, bob: CGFloat) {
@@ -452,7 +464,7 @@ private final class PlayerView: NSView {
     }
 
     private func drawHint() {
-        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 · Q/E 조준 · Space 슛 · A 태클")
+        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 이동·방향 · Space 슛 · A 태클")
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
         NSString(string: text).draw(
             in: NSRect(x: 10, y: 365, width: 250, height: 22),
@@ -463,22 +475,31 @@ private final class PlayerView: NSView {
     }
 
     private func tick() {
-        if window?.isKeyWindow != true { pressedKeys.removeAll(); sprintHeld = false; precisionAimActive = false }
+        if window?.isKeyWindow != true { pressedKeys.removeAll(); sprintHeld = false; movementVelocity = .zero }
         let dx = CGFloat((pressedKeys.contains(124) ? 1 : 0) - (pressedKeys.contains(123) ? 1 : 0))
         let dy = CGFloat((pressedKeys.contains(126) ? 1 : 0) - (pressedKeys.contains(125) ? 1 : 0))
-        if !isStunned && (dx != 0 || dy != 0) {
-            let speed: CGFloat = sprintHeld ? 9 : 5
-            let length = hypot(dx, dy)
-            onMove?(dx / length * speed, dy / length * speed)
-            runPhase += 1
-        }
-        let turn = (pressedKeys.contains(14) ? 1 : 0) - (pressedKeys.contains(12) ? 1 : 0)
-        if !isStunned && turn != 0 {
-            let angle = CGFloat(turn) * .pi / 90 // 2 degrees per frame at 60 FPS
-            let cosine = cos(angle), sine = sin(angle)
-            aimVector = CGPoint(x: aimVector.x * cosine - aimVector.y * sine,
-                                y: aimVector.x * sine + aimVector.y * cosine)
+        let length = hypot(dx, dy)
+        if !isStunned && length > 0 {
+            let targetAngle = atan2(dy, dx)
+            let currentAngle = atan2(aimVector.y, aimVector.x)
+            let difference = atan2(sin(targetAngle - currentAngle), cos(targetAngle - currentAngle))
+            let turn = min(max(difference, -0.18), 0.18)
+            let angle = currentAngle + turn
+            aimVector = CGPoint(x: cos(angle), y: sin(angle))
             heading = PlayerHeading(dx: aimVector.x, dy: aimVector.y)
+        }
+        let speed: CGFloat = sprintHeld ? 9 : 5
+        let target = !isStunned && length > 0
+            ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero
+        let smoothing: CGFloat = length > 0 ? 0.24 : 0.28
+        movementVelocity.x += (target.x - movementVelocity.x) * smoothing
+        movementVelocity.y += (target.y - movementVelocity.y) * smoothing
+        let movementSpeed = hypot(movementVelocity.x, movementVelocity.y)
+        if movementSpeed > 0.08 && !isStunned {
+            onMove?(movementVelocity.x, movementVelocity.y)
+            runPhase += movementSpeed / speed
+        } else if length == 0 || isStunned {
+            movementVelocity = .zero
         }
         feedbackFrames = max(0, feedbackFrames - 1)
         needsDisplay = true
