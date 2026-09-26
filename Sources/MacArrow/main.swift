@@ -9,6 +9,8 @@ private func usage() {
 
     Usage:
       siu setup
+      siu pair-code
+      siu pair
       siu start [--port 45678]
       siu kick <left|right|hostname-or-ip> [--port 45678] [--y 0.0...1.0]
       siu layout
@@ -18,6 +20,7 @@ private func usage() {
 
     Examples:
       siu setup
+      siu pair-code
       siu start
       siu kick left --y 0.18
       siu kick friends-mac.local
@@ -45,6 +48,31 @@ guard let command = arguments.first else {
 }
 
 switch command {
+case "pair-code":
+    do {
+        let key = try RoomSecretStore.generate()
+        print("페어링 코드: \(RoomSecretStore.code(for: key))")
+        print("다른 Mac에서 `siu pair`를 실행한 뒤 코드를 입력하세요. 이 코드는 신뢰하는 사람에게만 공유하세요.")
+    } catch {
+        fputs("페어링 코드 저장 실패: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+
+case "pair":
+    guard arguments.count == 1 else { usage(); exit(2) }
+    print("상대 Mac에 표시된 32자리 페어링 코드: ", terminator: "")
+    guard let input = readLine(), let key = RoomSecretStore.parse(input) else {
+        fputs("32자리 페어링 코드를 입력하세요.\n", stderr)
+        exit(2)
+    }
+    do {
+        try RoomSecretStore.save(key)
+        print("✅ 페어링 코드 저장됨. 이제 두 Mac에서 `siu start`를 실행하세요.")
+    } catch {
+        fputs("페어링 코드 저장 실패: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+
 case "kick", "shoot":
     guard arguments.count >= 2, let port = parsedPort(arguments) else {
         usage()
@@ -152,6 +180,7 @@ case "check":
 
 case "self-test":
     let failures = SelfTest.run() + SelfTest.runNetwork() + SelfTest.runPairSimulation()
+        + SelfTest.runWrongRoomSimulation()
     if failures.isEmpty { print("Physics and match protocol self-test OK") }
     else { fputs("Self-test failed: \(failures.joined(separator: ", "))\n", stderr); exit(1) }
 
