@@ -1,6 +1,6 @@
 cask "siu-app-beta" do
-  version "1.4.0-beta.5"
-  sha256 "bb82b6dbb9ada05ec278440d75f5f547b3b5c52c421377c03f2a73155f8c65ef"
+  version "1.5.0-beta.1"
+  sha256 "3d2ab0c273ca40061767717751b0929e59bdb1755a686f917cc948ec59a1d345"
 
   url "https://github.com/ddingddong9/homebrew-siu/releases/download/v#{version}/siu-v#{version}-macos-app.zip"
   name "SIU"

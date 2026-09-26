@@ -22,7 +22,7 @@ final class LayoutEditorWindowController: NSWindowController, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "siu 화면 배치"
+        window.title = "SIU 상대 연결·화면 배치"
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -35,12 +35,12 @@ final class LayoutEditorWindowController: NSWindowController, NSWindowDelegate {
     required init?(coder: NSCoder) { nil }
 
     private func buildUI(in root: NSView) {
-        let title = NSTextField(labelWithString: "화면을 실제 위치처럼 드래그하세요")
+        let title = NSTextField(labelWithString: "친구 화면을 선택해 연결 주소를 입력하세요")
         title.font = .boldSystemFont(ofSize: 18)
         title.frame = NSRect(x: 24, y: 478, width: 560, height: 24)
         root.addSubview(title)
 
-        let subtitle = NSTextField(labelWithString: "예: 친구 화면이 내 왼쪽이면, 친구 카드를 내 화면 왼쪽에 놓습니다.")
+        let subtitle = NSTextField(labelWithString: "1대1 경기는 친구 1명만 등록합니다. 카드 위치는 연습용 화면 전송에만 사용합니다.")
         subtitle.textColor = .secondaryLabelColor
         subtitle.frame = NSRect(x: 24, y: 452, width: 620, height: 20)
         root.addSubview(subtitle)

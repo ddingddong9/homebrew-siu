@@ -3,7 +3,7 @@ import Network
 import CryptoKit
 
 enum MatchEventKind: String, Codable, Hashable {
-    case ping, pong, ack, start, stop, ball, goal, player, tackle, sync
+    case ping, pong, ack, start, stop, ball, goal, player, kick, tackle, sync
 }
 
 enum GameIdentity {
@@ -19,7 +19,7 @@ enum RoomPairingError: LocalizedError {
 }
 
 struct MatchMessage: Codable {
-    static let protocolVersion = 4
+    static let protocolVersion = 5
     let version: Int
     let id: UUID
     let senderID: UUID

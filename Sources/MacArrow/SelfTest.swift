@@ -63,6 +63,30 @@ enum SelfTest {
               "pairing code parser")
         check(RoomSecretStore.parse("invalid") == nil, "invalid pairing code")
 
+        var arenaBall = ArenaBall.kickoff
+        check(ArenaPhysics.kick(&arenaBall, from: CGPoint(x: 0.46, y: 0.5),
+                                direction: CGPoint(x: 1, y: 0)), "arena near-ball kick")
+        check(arenaBall.vx > 0 && abs(arenaBall.vy) < 0.001, "arena 360-degree direction")
+        check(!ArenaPhysics.kick(&arenaBall, from: CGPoint(x: 0.1, y: 0.1),
+                                 direction: CGPoint(x: 1, y: 0)), "arena kick range")
+        var leftGoal = ArenaBall(x: 0.041, y: 0.5, vx: -1, vy: 0)
+        check(ArenaPhysics.step(&leftGoal, dt: 1.0 / 60) == .goalAtLeft, "arena left goal")
+        var rightGoal = ArenaBall(x: 0.959, y: 0.5, vx: 1, vy: 0)
+        check(ArenaPhysics.step(&rightGoal, dt: 1.0 / 60) == .goalAtRight, "arena right goal")
+        var wall = ArenaBall(x: 0.5, y: 0.081, vx: 0, vy: -1)
+        check(ArenaPhysics.step(&wall, dt: 1.0 / 60) == .inPlay && wall.vy > 0,
+              "arena sideline rebound")
+        var touched = ArenaBall(x: 0.5, y: 0.5)
+        ArenaPhysics.contact(&touched, player: CGPoint(x: 0.5, y: 0.5),
+                             direction: CGPoint(x: 1, y: 0))
+        check(touched.x > 0.53 && touched.vx > 0, "arena player-ball contact")
+
+        let action = MatchMessage(kind: .kick, matchID: UUID(), vx: 0.707, vy: 0.707)
+        if let data = try? JSONEncoder().encode(action),
+           let decoded = try? JSONDecoder().decode(MatchMessage.self, from: data) {
+            check(decoded.kind == .kick && decoded.vx == action.vx, "arena kick packet")
+        } else { failures.append("arena kick packet encoding") }
+
         return failures
     }
 
@@ -108,8 +132,9 @@ enum SelfTest {
         a.start(); b.start()
         let packets: [(MatchTransport, MatchMessage)] = [
             (a, MatchMessage(kind: .start, matchID: matchID, duration: 60)),
-            (a, MatchMessage(kind: .ball, matchID: matchID, y: 0.3, vx: -1, vy: 0.2)),
-            (b, MatchMessage(kind: .goal, matchID: matchID, actorID: GameIdentity.localID)),
+            (a, MatchMessage(kind: .ball, matchID: matchID, x: 0.5, y: 0.3, vx: -1, vy: 0.2)),
+            (b, MatchMessage(kind: .player, matchID: matchID, x: 0.7, y: 0.5, vx: -1, vy: 0)),
+            (b, MatchMessage(kind: .kick, matchID: matchID, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .stop, matchID: matchID))
         ]
         for (sender, packet) in packets {
@@ -118,14 +143,14 @@ enum SelfTest {
             }
         }
         let deadline = Date().addingTimeInterval(4)
-        while (seenByA.count < 2 || seenByB.count < 2 || acknowledged < 4) && Date() < deadline {
+        while (seenByA.count < 3 || seenByB.count < 2 || acknowledged < 5) && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
         a.stop(); b.stop()
         var failures: [String] = []
-        if seenByA != Set([.goal, .stop]) { failures.append("peer A events") }
+        if seenByA != Set([.player, .kick, .stop]) { failures.append("peer A events") }
         if seenByB != Set([.start, .ball]) { failures.append("peer B events") }
-        if acknowledged != 4 { failures.append("two-peer acknowledgements") }
+        if acknowledged != 5 { failures.append("two-peer acknowledgements") }
         return failures
     }
 
