@@ -186,7 +186,7 @@ case "check":
 case "self-test":
     let failures = SelfTest.run() + SelfTest.runNetwork() + SelfTest.runPairSimulation()
         + SelfTest.runWrongRoomSimulation() + SelfTest.runRoomJoinSimulation()
-        + SelfTest.runBonjourRoomSimulation()
+        + SelfTest.runBonjourRoomSimulation() + SelfTest.runRoomRejectionSimulation()
     if failures.isEmpty { print("Physics and match protocol self-test OK") }
     else { fputs("Self-test failed: \(failures.joined(separator: ", "))\n", stderr); exit(1) }
 

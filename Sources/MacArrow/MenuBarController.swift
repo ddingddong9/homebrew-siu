@@ -16,7 +16,8 @@ final class MenuBarController: NSObject {
     private var roomMode: RoomMode?
     private var roomEndpoint: NWEndpoint?
     private var roomPeerID: UUID?
-    private var roomBrowser: LocalRoomBrowser?
+    private var roomBrowserWindow: RoomBrowserWindowController?
+    private var joinApprovalInProgress = false
     private let createRoomItem = NSMenuItem(title: "방 만들기…", action: #selector(createRoom), keyEquivalent: "")
     private let joinRoomItem = NSMenuItem(title: "방 참가…", action: #selector(joinRoom), keyEquivalent: "")
     private let leaveRoomItem = NSMenuItem(title: "방 나가기", action: #selector(leaveRoom), keyEquivalent: "")
@@ -62,11 +63,37 @@ final class MenuBarController: NSObject {
         transport.onPeerPing = { [weak self] endpoint, peerID in
             guard let self, self.roomMode == .host, !self.match.isRunning,
                   peerID != GameIdentity.localID,
-                  self.roomPeerID == nil || self.roomPeerID == peerID else { return }
+                  self.roomPeerID == peerID else { return }
             self.roomEndpoint = endpoint
-            self.roomPeerID = peerID
             self.match.setRoomPeer(endpoint)
             self.connectionItem.title = "방: 친구 연결 확인됨"
+        }
+        transport.onJoinRequest = { [weak self] request, reply in
+            guard let self, self.roomMode == .host, !self.match.isRunning,
+                  self.roomPeerID == nil, !self.joinApprovalInProgress else {
+                reply(false)
+                return
+            }
+            self.joinApprovalInProgress = true
+            let alert = NSAlert()
+            alert.messageText = "방 참가 요청"
+            alert.informativeText = "\(request.playerName)에서 이 방에 참가하려고 합니다. 허용할까요?"
+            alert.addButton(withTitle: "참가 허용")
+            alert.addButton(withTitle: "거절")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+            let accepted = alert.runModal() == .alertFirstButtonReturn
+            self.joinApprovalInProgress = false
+            if accepted {
+                self.roomPeerID = request.playerID
+                self.connectionItem.title = "방: 참가 승인됨 · 연결 확인 중…"
+                DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                    guard let self, self.roomMode == .host, !self.match.isRunning,
+                          self.roomPeerID == request.playerID, self.roomEndpoint == nil else { return }
+                    self.roomPeerID = nil
+                    self.connectionItem.title = "방: 친구 참가 대기 중"
+                }
+            }
+            reply(accepted)
         }
         match.approveInvite = { _ in
             let alert = NSAlert()
@@ -133,8 +160,20 @@ final class MenuBarController: NSObject {
 
     @objc private func createRoom() {
         guard !match.isRunning else { return }
-        roomBrowser?.cancel()
-        roomBrowser = nil
+        let alert = NSAlert()
+        alert.messageText = "방 만들기"
+        alert.informativeText = "같은 와이파이의 친구에게 표시할 방 이름을 입력하세요."
+        let field = NSTextField(string: "SIU 방")
+        field.frame = NSRect(x: 0, y: 0, width: 280, height: 25)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "만들기")
+        alert.addButton(withTitle: "취소")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let proposed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = proposed.isEmpty ? "SIU 방" : String(proposed.prefix(25))
+        roomBrowserWindow?.close()
+        roomBrowserWindow = nil
         let key = RoomSecretStore.freshKey()
         transport.useRoomKey(key)
         roomMode = .host
@@ -142,73 +181,66 @@ final class MenuBarController: NSObject {
         roomEndpoint = nil
         roomPeerID = nil
         match.setRoomPeer(nil)
-        transport.advertiseRoom(true)
-        connectionItem.title = "방: 친구 참가 대기 중"
-
-        let alert = NSAlert()
-        alert.messageText = "방을 만들었습니다"
-        alert.informativeText = "같은 와이파이의 친구에게 아래 방 코드를 보내세요. 친구는 SIU의 ‘방 참가’를 누르면 됩니다."
-        let field = NSTextField(string: RoomSecretStore.code(for: key))
-        field.isEditable = false
-        field.isSelectable = true
-        field.frame = NSRect(x: 0, y: 0, width: 320, height: 25)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "코드 복사")
-        alert.addButton(withTitle: "닫기")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        if alert.runModal() == .alertFirstButtonReturn {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(field.stringValue, forType: .string)
-        }
+        transport.advertiseRoom(named: name)
+        connectionItem.title = "방: \(name) · 친구 참가 대기 중"
     }
 
     @objc private func joinRoom() {
         guard !match.isRunning else { return }
-        let alert = NSAlert()
-        alert.messageText = "친구 방 참가"
-        alert.informativeText = "같은 와이파이에 있는 친구의 32자리 방 코드를 입력하세요."
-        let field = NSTextField(string: "")
-        field.frame = NSRect(x: 0, y: 0, width: 320, height: 25)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "방 찾기")
-        alert.addButton(withTitle: "취소")
-        NSApplication.shared.activate(ignoringOtherApps: true)
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        guard let key = RoomSecretStore.parse(field.stringValue) else {
-            connectionItem.title = "방 코드가 올바르지 않습니다"
+        if let roomBrowserWindow {
+            roomBrowserWindow.showWindow(nil)
+            roomBrowserWindow.window?.makeKeyAndOrderFront(nil)
             return
         }
-        roomBrowser?.cancel()
-        transport.advertiseRoom(false)
-        transport.useRoomKey(key)
-        roomMode = .guest
-        leaveRoomItem.isEnabled = true
+        transport.advertiseRoom(named: nil)
+        if let savedKey = RoomSecretStore.load() { transport.useRoomKey(savedKey) }
+        roomMode = nil
         roomEndpoint = nil
         roomPeerID = nil
         match.setRoomPeer(nil)
+        leaveRoomItem.isEnabled = false
         connectionItem.title = "방: 같은 와이파이에서 찾는 중…"
-        let browser = LocalRoomBrowser(transport: transport)
-        roomBrowser = browser
-        browser.start(onFound: { [weak self, weak browser] endpoint, peerID in
-            guard let self, let browser, self.roomBrowser === browser,
-                  peerID != GameIdentity.localID else { return }
-            self.roomEndpoint = endpoint
-            self.roomPeerID = peerID
-            self.match.setRoomPeer(endpoint)
-            self.connectionItem.title = "방: 친구 연결 확인됨"
-            self.roomBrowser = nil
-        }, onFailure: { [weak self, weak browser] in
-            guard let self, let browser, self.roomBrowser === browser else { return }
-            self.connectionItem.title = "방을 찾지 못했습니다 · 같은 와이파이인지 확인하세요"
-            self.roomBrowser = nil
-        })
+        let controller = RoomBrowserWindowController()
+        roomBrowserWindow = controller
+        controller.onJoin = { [weak self, weak controller] room in
+            guard let self, let controller, self.roomBrowserWindow === controller else { return }
+            let playerName = String((Host.current().localizedName ?? "친구 Mac").prefix(40))
+            self.transport.requestJoin(endpoint: room.endpoint, playerName: playerName) { [weak self, weak controller] key, hostID in
+                guard let self, let controller, self.roomBrowserWindow === controller else { return }
+                guard let key, let hostID, hostID != GameIdentity.localID else {
+                    controller.setStatus("참가가 거절되었거나 응답이 없습니다. 다시 선택하세요.", allowSelection: true)
+                    return
+                }
+                self.transport.useRoomKey(key)
+                self.transport.ping(endpoint: room.endpoint) { [weak self, weak controller] peerID in
+                    guard let self, let controller, self.roomBrowserWindow === controller else { return }
+                    guard peerID == hostID else {
+                        if let savedKey = RoomSecretStore.load() { self.transport.useRoomKey(savedKey) }
+                        controller.setStatus("방 연결 확인에 실패했습니다. 다시 시도하세요.", allowSelection: true)
+                        return
+                    }
+                    self.roomMode = .guest
+                    self.leaveRoomItem.isEnabled = true
+                    self.roomEndpoint = room.endpoint
+                    self.roomPeerID = hostID
+                    self.match.setRoomPeer(room.endpoint)
+                    self.connectionItem.title = "방: 친구 연결 확인됨"
+                    controller.close()
+                }
+            }
+        }
+        controller.onClose = { [weak self, weak controller] in
+            guard let self, let controller, self.roomBrowserWindow === controller else { return }
+            self.roomBrowserWindow = nil
+        }
+        controller.show()
     }
 
     @objc private func leaveRoom() {
         guard !match.isRunning else { return }
-        roomBrowser?.cancel()
-        roomBrowser = nil
-        transport.advertiseRoom(false)
+        roomBrowserWindow?.close()
+        roomBrowserWindow = nil
+        transport.advertiseRoom(named: nil)
         if let savedKey = RoomSecretStore.load() { transport.useRoomKey(savedKey) }
         roomMode = nil
         roomEndpoint = nil
