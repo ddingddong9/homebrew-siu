@@ -1,55 +1,54 @@
 import Foundation
 import Network
 
+struct LocalRoom: Hashable {
+    let name: String
+    let endpoint: NWEndpoint
+}
+
 @MainActor
 final class LocalRoomBrowser {
-    private let browser: NWBrowser
-    private let transport: MatchTransport
-    private var attempted = Set<NWEndpoint>()
-    private var finished = false
-    private var completion: ((NWEndpoint, UUID) -> Void)?
-    private var onFailure: (() -> Void)?
+    private let browser = NWBrowser(for: .bonjourWithTXTRecord(type: MatchTransport.roomServiceType,
+                                                               domain: nil),
+                                    using: .udp)
+    private var active = false
 
-    init(transport: MatchTransport) {
-        self.transport = transport
-        browser = NWBrowser(for: .bonjour(type: MatchTransport.roomServiceType, domain: nil),
-                            using: .udp)
-    }
-
-    func start(onFound: @escaping (NWEndpoint, UUID) -> Void,
+    func start(onChange: @escaping ([LocalRoom]) -> Void,
                onFailure: @escaping () -> Void) {
-        completion = onFound
-        self.onFailure = onFailure
+        guard !active else { return }
+        active = true
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             DispatchQueue.main.async {
-                guard let self, !self.finished else { return }
-                for result in results where self.attempted.insert(result.endpoint).inserted {
-                    self.transport.ping(endpoint: result.endpoint) { [weak self] peerID in
-                        guard let self, let peerID, !self.finished else { return }
-                        self.finished = true
-                        self.browser.cancel()
-                        self.completion?(result.endpoint, peerID)
-                    }
-                }
+                guard let self, self.active else { return }
+                let rooms = results.compactMap { result -> LocalRoom? in
+                    guard case .service(let name, _, _, _) = result.endpoint,
+                          case .bonjour(let record) = result.metadata,
+                          record["version"] == String(MatchMessage.protocolVersion) else { return nil }
+                    return LocalRoom(name: name, endpoint: result.endpoint)
+                }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+                onChange(rooms)
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
-            if case .failed = state { DispatchQueue.main.async { self?.fail() } }
+            if case .ready = state {
+                DispatchQueue.main.async {
+                    guard let self, self.active, self.browser.browseResults.isEmpty else { return }
+                    onChange([])
+                }
+            } else if case .failed = state {
+                DispatchQueue.main.async {
+                    guard let self, self.active else { return }
+                    self.cancel()
+                    onFailure()
+                }
+            }
         }
         browser.start(queue: .main)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in self?.fail() }
     }
 
     func cancel() {
-        guard !finished else { return }
-        finished = true
+        guard active else { return }
+        active = false
         browser.cancel()
-    }
-
-    private func fail() {
-        guard !finished else { return }
-        finished = true
-        browser.cancel()
-        onFailure?()
     }
 }

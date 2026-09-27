@@ -213,12 +213,21 @@ enum SelfTest {
         }
         var joined = false
         var hostSawGuest = false
+        host.onJoinRequest = { request, respond in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                respond(request.playerName == "테스트 친구")
+            }
+        }
         host.onPeerPing = { endpoint, _ in
             host.ping(endpoint: endpoint) { peerID in hostSawGuest = peerID != nil }
         }
         host.start(); guest.start()
-        guest.useRoomKey(host.currentKey)
-        guest.ping(host: "127.0.0.1") { peerID in joined = peerID != nil }
+        guest.requestJoin(endpoint: guest.endpoint(for: "127.0.0.1"),
+                          playerName: "테스트 친구", playerID: UUID()) { key, hostID in
+            guard let key, hostID != nil else { return }
+            guest.useRoomKey(key)
+            guest.ping(host: "127.0.0.1") { peerID in joined = peerID != nil }
+        }
         let deadline = Date().addingTimeInterval(4)
         while (!joined || !hostSawGuest) && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
@@ -237,19 +246,43 @@ enum SelfTest {
             return ["Bonjour room setup"]
         }
         host.start(); guest.start()
-        host.advertiseRoom(true)
-        let browser = MainActor.assumeIsolated { LocalRoomBrowser(transport: guest) }
+        host.advertiseRoom(named: "테스트 방")
+        let browser = MainActor.assumeIsolated { LocalRoomBrowser() }
         var discovered = false
         MainActor.assumeIsolated {
-            browser.start(onFound: { _, _ in discovered = true }, onFailure: {})
+            browser.start(onChange: { rooms in
+                discovered = rooms.contains { $0.name.hasPrefix("테스트 방") }
+            }, onFailure: {})
         }
         let deadline = Date().addingTimeInterval(8)
         while !discovered && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
         MainActor.assumeIsolated { browser.cancel() }
-        host.advertiseRoom(false)
+        host.advertiseRoom(named: nil)
         host.stop(); guest.stop()
         return discovered ? [] : ["Bonjour room discovery"]
+    }
+
+    static func runRoomRejectionSimulation() -> [String] {
+        let port = UInt16.random(in: 52000...62000)
+        guard let host = try? MatchTransport(port: port, roomKey: RoomSecretStore.freshKey()),
+              let guest = try? MatchTransport(port: port + 1, remotePort: port,
+                                              roomKey: RoomSecretStore.freshKey()) else {
+            return ["room rejection UDP setup"]
+        }
+        var rejected = false
+        host.onJoinRequest = { _, reply in reply(false) }
+        host.start(); guest.start()
+        guest.requestJoin(endpoint: guest.endpoint(for: "127.0.0.1"),
+                          playerName: "테스트 친구", playerID: UUID()) { key, _ in
+            rejected = key == nil
+        }
+        let deadline = Date().addingTimeInterval(4)
+        while !rejected && Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
+        }
+        host.stop(); guest.stop()
+        return rejected ? [] : ["room join rejection"]
     }
 }

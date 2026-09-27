@@ -6,6 +6,27 @@ enum MatchEventKind: String, Codable, Hashable {
     case ping, pong, ack, start, stop, ball, goal, player, kick, tackle, fall, kickoff, powerShot, pause, resume, sync
 }
 
+struct RoomJoinRequest: Codable {
+    let version: Int
+    let id: UUID
+    let playerID: UUID
+    let playerName: String
+
+    init(playerName: String, playerID: UUID = GameIdentity.localID) {
+        version = MatchMessage.protocolVersion
+        id = UUID()
+        self.playerID = playerID
+        self.playerName = playerName
+    }
+}
+
+struct RoomJoinResponse: Codable {
+    let version: Int
+    let requestID: UUID
+    let hostID: UUID
+    let roomKey: Data?
+}
+
 enum GameIdentity {
     static let localID = UUID()
 }
@@ -19,7 +40,7 @@ enum RoomPairingError: LocalizedError {
 }
 
 struct MatchMessage: Codable {
-    static let protocolVersion = 6
+    static let protocolVersion = 7
     let version: Int
     let id: UUID
     let senderID: UUID
@@ -88,6 +109,7 @@ final class MatchTransport {
     private var roomKey: Data
     var onMessage: ((MatchMessage) -> Void)?
     var onPeerPing: ((NWEndpoint, UUID) -> Void)?
+    var onJoinRequest: ((RoomJoinRequest, @escaping (Bool) -> Void) -> Void)?
 
     var currentKey: Data {
         keyLock.lock()
@@ -102,11 +124,12 @@ final class MatchTransport {
         keyLock.unlock()
     }
 
-    func advertiseRoom(_ active: Bool) {
-        listener.service = active
-            ? NWListener.Service(name: "SIU-\(GameIdentity.localID.uuidString.prefix(8))",
-                                 type: Self.roomServiceType)
-            : nil
+    func advertiseRoom(named name: String?) {
+        listener.service = name.map {
+            NWListener.Service(name: "\($0) · \(GameIdentity.localID.uuidString.prefix(4))",
+                               type: Self.roomServiceType,
+                               txtRecord: NWTXTRecord(["version": String(MatchMessage.protocolVersion)]))
+        }
     }
 
     init(port: UInt16, remotePort: UInt16? = nil, roomKey: Data? = nil) throws {
@@ -128,6 +151,28 @@ final class MatchTransport {
             connection.start(queue: .global(qos: .userInitiated))
             connection.receiveMessage { [weak self] data, _, _, _ in
                 guard let self, let data else { connection.cancel(); return }
+                if let request = try? JSONDecoder().decode(RoomJoinRequest.self, from: data) {
+                    guard data.count <= 1024, request.version == MatchMessage.protocolVersion,
+                          request.playerID != GameIdentity.localID,
+                          (1...40).contains(request.playerName.count) else {
+                        connection.cancel()
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        guard let approve = self.onJoinRequest else { connection.cancel(); return }
+                        approve(request) { accepted in
+                            let reply = RoomJoinResponse(version: MatchMessage.protocolVersion,
+                                                         requestID: request.id,
+                                                         hostID: GameIdentity.localID,
+                                                         roomKey: accepted ? self.currentKey : nil)
+                            let encoded = try? JSONEncoder().encode(reply)
+                            connection.send(content: encoded, completion: .contentProcessed { _ in
+                                connection.cancel()
+                            })
+                        }
+                    }
+                    return
+                }
                 let key = self.currentKey
                 guard let message = MatchEnvelope.open(data, key: key),
                       message.version == MatchMessage.protocolVersion,
@@ -162,6 +207,52 @@ final class MatchTransport {
 
     func endpoint(for host: String) -> NWEndpoint {
         .hostPort(host: NWEndpoint.Host(host), port: outboundPort)
+    }
+
+    func requestJoin(endpoint: NWEndpoint, playerName: String,
+                     playerID: UUID = GameIdentity.localID,
+                     completion: @escaping (Data?, UUID?) -> Void) {
+        let request = RoomJoinRequest(playerName: playerName, playerID: playerID)
+        guard let encoded = try? JSONEncoder().encode(request) else {
+            completion(nil, nil)
+            return
+        }
+        let connection = NWConnection(to: endpoint, using: .udp)
+        let queue = DispatchQueue(label: "siu.room.join.\(request.id.uuidString)")
+        let lock = NSLock()
+        var finished = false
+        func finish(_ key: Data?, _ hostID: UUID?) {
+            lock.lock()
+            let shouldFinish = !finished
+            finished = true
+            lock.unlock()
+            guard shouldFinish else { return }
+            connection.cancel()
+            DispatchQueue.main.async { completion(key, hostID) }
+        }
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                connection.send(content: encoded, completion: .contentProcessed { error in
+                    if error != nil { finish(nil, nil); return }
+                    connection.receiveMessage { response, _, _, _ in
+                        guard let response,
+                              let reply = try? JSONDecoder().decode(RoomJoinResponse.self, from: response),
+                              reply.version == MatchMessage.protocolVersion,
+                              reply.requestID == request.id,
+                              let key = reply.roomKey, key.count == 16 else {
+                            finish(nil, nil)
+                            return
+                        }
+                        finish(key, reply.hostID)
+                    }
+                })
+            case .failed: finish(nil, nil)
+            default: break
+            }
+        }
+        connection.start(queue: queue)
+        queue.asyncAfter(deadline: .now() + 60) { finish(nil, nil) }
     }
 
     func send(_ message: MatchMessage, to host: String, completion: ((Error?) -> Void)? = nil) {
