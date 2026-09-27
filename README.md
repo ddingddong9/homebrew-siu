@@ -14,6 +14,8 @@ brew install --cask siu-app-beta
 
 Homebrew가 비공식 탭의 cask를 처음 읽을 때 신뢰 명령이 필요합니다. 이 명령은 SIU cask만 신뢰합니다. 이미 설치했다면 SIU를 종료한 뒤 `brew update && brew upgrade --cask siu-app-beta`로 업데이트하세요. 실행 중 Dock의 SIU 아이콘을 오른쪽 클릭해 **옵션 → Dock에 유지**를 선택할 수 있습니다. 앱 베타는 기존 명령줄용 `siu`/`siu-beta` 포뮬러와 별개입니다.
 
+앱을 열면 새 베타 릴리스가 있는지 확인하고, 실행 중에도 약 6시간마다 확인합니다. 새 버전이 있으면 메뉴바 아이콘에 `⬆︎`가 붙고 한 번 안내창을 띄웁니다. 경기 중에는 안내창을 경기가 끝날 때까지 미룹니다. 안내창에서 업데이트 명령을 복사할 수 있으며 설치는 자동으로 실행하지 않습니다. 메뉴바의 **업데이트 확인…**으로 직접 다시 확인할 수도 있습니다.
+
 이 앱 베타는 macOS 13 이상, Apple Silicon 또는 Intel Mac을 지원합니다. Xcode는 필요하지 않습니다. 현재 배포 파일은 임시 서명이며 Apple 공증은 아직 받지 않았습니다. macOS가 첫 실행을 막으면 앱의 출처를 직접 확인한 뒤 macOS **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용할 수 있습니다. 보안 경고를 무시할지 결정하기 전에 GitHub 릴리스와 체크섬을 확인하세요.
 
 ## 수동 연결용 페어링
@@ -100,7 +102,7 @@ swift build -c release
 .build/release/siu self-test
 .build/release/siu asset-check
 .build/release/siu demo
-Scripts/package-app.sh 1.8.0-beta.1
+Scripts/package-app.sh 1.9.0-beta.1
 ```
 
 이동·달리기·슈팅·태클의 44개 투명 스프라이트는 `Sources/MacArrow/Resources`에 포함되어 있습니다. 뒤쪽 슈팅 컷은 사용자가 제공한 GIF에서 추출했고, 나머지는 그 캐릭터를 참고해 생성했습니다. 자산의 사용 범위는 [ASSET_NOTICE.md](ASSET_NOTICE.md)를 참고하세요. 경기 패킷은 수신 확인·재전송을 하며 공·선수 위치와 점수·남은 시간을 주기적으로 맞춥니다. 실제 Mac 두 대에서의 전체 경기 검증과 지연·충돌 조정은 아직 필요합니다. 1대1 경기만 지원하며, 경기용 키로 메시지를 인증하지만 계정 인증과 암호화는 없습니다. 현재 화면은 2D 경기장 베타로, 상용 FIFA처럼 3D 카메라·선수 AI·패스·파울 규칙까지 구현한 것은 아닙니다.

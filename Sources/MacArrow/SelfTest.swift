@@ -103,6 +103,30 @@ enum SelfTest {
             check(decoded.kind == .kick && decoded.vx == action.vx, "arena kick packet")
         } else { failures.append("arena kick packet encoding") }
 
+        let installed = SIUVersion("1.9.0-beta.1")
+        check(installed != nil && SIUVersion("v1.9.0-beta.2")! > installed!,
+              "beta update ordering")
+        check(SIUVersion("1.9.0")! > SIUVersion("1.9.0-rc.3")!,
+              "stable update ordering")
+        check(SIUVersion("1.10.0-beta.1")! > SIUVersion("1.9.9")!,
+              "minor update ordering")
+        check(SIUVersion("bad-version") == nil, "invalid update version")
+        let releases = """
+        [
+          {"tag_name":"v1.9.0-beta.2","draft":false,"assets":[{"name":"siu-v1.9.0-beta.2-macos-app.zip"}]},
+          {"tag_name":"v1.9.0-beta.3","draft":true,"assets":[{"name":"siu-v1.9.0-beta.3-macos-app.zip"}]},
+          {"tag_name":"v2.0.0-beta.1","draft":false,"assets":[{"name":"source.zip"}]},
+          {"tag_name":"v1.8.0-beta.1","draft":false,"assets":[{"name":"siu-v1.8.0-beta.1-macos-app.zip"}]}
+        ]
+        """.data(using: .utf8)!
+        if let installed {
+            check(AppUpdateChecker.newestUpdate(in: releases, installed: installed)?.version.raw == "1.9.0-beta.2",
+                  "newest installable app release")
+            check(AppUpdateChecker.newestUpdate(in: releases,
+                                                installed: SIUVersion("1.9.0-beta.2")!) == nil,
+                  "no duplicate update prompt")
+        }
+
         return failures
     }
 

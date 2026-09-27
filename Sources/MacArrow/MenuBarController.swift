@@ -12,6 +12,11 @@ final class MenuBarController: NSObject {
     private var preview: ArenaPreviewController?
     private var layoutEditor: LayoutEditorWindowController?
     private var connectionTimer: Timer?
+    private var updateTimer: Timer?
+    private var updateCheckInFlight = false
+    private var availableUpdate: SIUAvailableUpdate?
+    private var promptRetryScheduled = false
+    private let installedVersion = SIUVersion(Bundle.main.object(forInfoDictionaryKey: "SIUReleaseVersion") as? String ?? "")
     private enum RoomMode: Equatable { case host, guest }
     private var roomMode: RoomMode?
     private var roomEndpoint: NWEndpoint?
@@ -23,6 +28,7 @@ final class MenuBarController: NSObject {
     private let leaveRoomItem = NSMenuItem(title: "방 나가기", action: #selector(leaveRoom), keyEquivalent: "")
     private let playerMenuItem = NSMenuItem(title: "연습용 선수 생성", action: #selector(togglePlayer), keyEquivalent: "")
     private let connectionItem = NSMenuItem(title: "연결: 확인 안 됨", action: nil, keyEquivalent: "")
+    private let updateItem = NSMenuItem(title: "업데이트 확인…", action: #selector(checkForUpdatesPressed), keyEquivalent: "")
     private let startItem = NSMenuItem(title: "1대1 경기 시작…", action: #selector(startMatch), keyEquivalent: "")
     private let endItem = NSMenuItem(title: "경기 종료", action: #selector(endMatch), keyEquivalent: "")
     private let previewItem = NSMenuItem(title: "경기장 미리보기 (AI 연습)", action: #selector(showPreview), keyEquivalent: "")
@@ -56,6 +62,7 @@ final class MenuBarController: NSObject {
             self.connectionTimer = running ? Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.checkPeers(showProgress: false) { _ in } }
             } : nil
+            if !running { self.presentUpdateAlertIfNeeded() }
         }
         match.onConnectionIssue = { [weak self] message in
             self?.connectionItem.title = "연결 문제: \(message)"
@@ -109,6 +116,8 @@ final class MenuBarController: NSObject {
         let menu = NSMenu()
         connectionItem.isEnabled = false
         menu.addItem(connectionItem)
+        updateItem.target = self
+        menu.addItem(updateItem)
         let checkItem = NSMenuItem(title: "연결 확인", action: #selector(checkConnection), keyEquivalent: "")
         checkItem.target = self
         menu.addItem(checkItem)
@@ -137,6 +146,90 @@ final class MenuBarController: NSObject {
         menu.addItem(NSMenuItem(title: "siu 종료", action: #selector(quit), keyEquivalent: "q"))
         menu.items.last?.target = self
         statusItem.menu = menu
+        if Bundle.main.bundleURL.pathExtension == "app", installedVersion != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+                self?.checkForUpdates(manual: false)
+            }
+            updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.checkForUpdates(manual: false) }
+            }
+        } else {
+            updateItem.isEnabled = false
+        }
+    }
+
+    @objc private func checkForUpdatesPressed() {
+        if availableUpdate != nil { presentUpdateAlertIfNeeded(force: true) }
+        else { checkForUpdates(manual: true) }
+    }
+
+    private func checkForUpdates(manual: Bool) {
+        guard let installedVersion else { return }
+        guard !updateCheckInFlight else { return }
+        updateCheckInFlight = true
+        if manual { updateItem.title = "업데이트 확인 중…" }
+        AppUpdateChecker.check(installed: installedVersion) { [weak self] result in
+            guard let self else { return }
+            self.updateCheckInFlight = false
+            switch result {
+            case .success(let update):
+                self.availableUpdate = update
+                self.updateItem.title = update.map { "업데이트 가능: v\($0.version.raw)" } ?? "업데이트 확인…"
+                self.restoreStatusIcon()
+                if update != nil { self.presentUpdateAlertIfNeeded(force: manual) }
+                else if manual { self.showUpdateMessage("현재 최신 버전입니다.") }
+            case .failure:
+                self.updateItem.title = "업데이트 확인…"
+                if manual { self.showUpdateMessage("업데이트 정보를 확인하지 못했습니다. 인터넷 연결을 확인하세요.") }
+            }
+        }
+    }
+
+    private func presentUpdateAlertIfNeeded(force: Bool = false) {
+        guard let update = availableUpdate else { return }
+        let lastPrompted = UserDefaults.standard.string(forKey: "lastPromptedSIUUpdate")
+        guard force || lastPrompted != update.version.raw else { return }
+        if match.isRunning || preview?.isRunning == true || NSApplication.shared.modalWindow != nil {
+            if !promptRetryScheduled {
+                promptRetryScheduled = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+                    guard let self else { return }
+                    self.promptRetryScheduled = false
+                    self.presentUpdateAlertIfNeeded(force: force)
+                }
+            }
+            return
+        }
+        UserDefaults.standard.set(update.version.raw, forKey: "lastPromptedSIUUpdate")
+        let alert = NSAlert()
+        alert.messageText = "SIU 업데이트가 있습니다"
+        alert.informativeText = "v\(update.version.raw) 버전이 나왔습니다. 현재 SIU를 종료한 뒤 Homebrew로 업데이트하세요."
+        alert.addButton(withTitle: "업데이트 명령 복사")
+        alert.addButton(withTitle: "릴리스 보기")
+        alert.addButton(withTitle: "나중에")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("brew update && brew upgrade --cask siu-app-beta", forType: .string)
+        case .alertSecondButtonReturn:
+            NSWorkspace.shared.open(update.releaseURL)
+        default: break
+        }
+    }
+
+    private func showUpdateMessage(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "SIU 업데이트 확인"
+        alert.informativeText = message
+        alert.addButton(withTitle: "확인")
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
+    private func restoreStatusIcon() {
+        statusItem.length = availableUpdate == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
+        statusItem.button?.title = availableUpdate == nil ? "⚽️" : "⚽️⬆︎"
     }
 
     @objc private func togglePlayer() {
@@ -359,14 +452,14 @@ final class MenuBarController: NSObject {
     private func kick(direction: ShootDirection, normalizedY: Double, power: Double) -> Bool {
         guard let target = ScreenLayoutStore.load().target(in: direction) else {
             statusItem.button?.title = "⚠️"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.statusItem.button?.title = "⚽️" }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.restoreStatusIcon() }
             return false
         }
         let edge = direction == .left ? "right" : "left"
         BallSender.send(to: target.host, port: port, normalizedY: normalizedY, entryEdge: edge) { [weak self] error in
             DispatchQueue.main.async {
                 self?.statusItem.button?.title = error == nil ? "💨" : "⚠️"
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.statusItem.button?.title = "⚽️" }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in self?.restoreStatusIcon() }
             }
         }
         _ = power

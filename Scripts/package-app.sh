@@ -21,6 +21,11 @@ if [[ -e "$staging_dir" || -e "$archive" ]]; then
 fi
 
 cd "$root_dir"
+plist_version="$(/usr/libexec/PlistBuddy -c 'Print :SIUReleaseVersion' Packaging/SIU-Info.plist)"
+if [[ "$plist_version" != "$version" ]]; then
+  print -u2 "SIUReleaseVersion in Packaging/SIU-Info.plist must match $version."
+  exit 1
+fi
 swift build -c release --triple arm64-apple-macosx13.0
 swift build -c release --triple x86_64-apple-macosx13.0
 
