@@ -20,6 +20,7 @@ final class ArenaPreviewController {
     private var powerReleaseAt: TimeInterval = 0
     private var powerPending = false
     private var fireUntil: TimeInterval = 0
+    var isRunning: Bool { timer != nil }
 
     init() {
         arena.onKick = { [weak self] position, direction in
