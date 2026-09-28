@@ -13,5 +13,7 @@
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>같은 Wi-Fi의 친구와 SIU Football 개발 경기를 연결합니다.</string>
 </dict>
 </plist>

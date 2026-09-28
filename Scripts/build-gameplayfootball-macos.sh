@@ -11,6 +11,7 @@ quick_match=false
 lan_role=""
 lan_host=""
 lan_port=38245
+app_output=""
 for arg in "$@"; do
   case "$arg" in
     --run) run_game=true ;;
@@ -18,7 +19,8 @@ for arg in "$@"; do
     --lan-host) lan_role=host; quick_match=true ;;
     --lan-join=*) lan_role=client; lan_host="${arg#--lan-join=}"; quick_match=true ;;
     --lan-port=*) lan_port="${arg#--lan-port=}" ;;
-    *) print -u2 "usage: $0 [--quick-match] [--lan-host|--lan-join=IPv4] [--lan-port=PORT] [--run]"; exit 2 ;;
+    --app-output=*) app_output="${arg#--app-output=}" ;;
+    *) print -u2 "usage: $0 [--quick-match] [--lan-host|--lan-join=IPv4] [--lan-port=PORT] [--app-output=PATH] [--run]"; exit 2 ;;
   esac
 done
 if [[ "$lan_port" != <-> || "$lan_port" -lt 1 || "$lan_port" -gt 65535 ]]; then
@@ -77,10 +79,16 @@ if [[ -n "$lan_role" ]]; then
 fi
 
 app_path="$("$repo_root/Scripts/package-gameplayfootball-dev-app.sh" "$build_dir")"
+if [[ -z "$app_output" ]]; then
+  app_output="$repo_root/dist/SIU Football.app"
+fi
+app_output="${app_output:A}"
+mkdir -p "${app_output:h}"
+ditto "$app_path" "$app_output"
 
 print "GameplayFootball built at: $build_dir/gameplayfootball"
-print "Application: $app_path"
+print "Application: $app_output"
 print "Build log: $stage/build.log"
 if $run_game; then
-  open "$app_path"
+  open "$app_output"
 fi

@@ -2,6 +2,8 @@
 
 기준 소스는 `Vendor/GameplayFootball`의 고정 커밋 `68159a2f0f96eec8ebba26ab7820130f36b922a7`이다. 원본 파일은 수정하지 않고 `GameplayFootballPatches/`의 순서 있는 패치를 빌드 시 임시 소스에 적용한다. 원본 라이선스는 Apache-2.0이며, 번들 안의 개별 글꼴·자산 고지도 배포 시 확인해야 한다.
 
+다른 Mac에서 이어서 개발하는 순서는 [GameplayFootball 개발 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 따른다.
+
 ## 빌드와 실행
 
 Apple Silicon Mac에서 Xcode Command Line Tools와 Homebrew가 필요하다. 테스트에 사용한 의존성은 CMake, Ninja, SDL2 호환 라이브러리, SDL2_image, SDL2_ttf, SDL2_gfx, Boost, OpenAL, SQLite다.
@@ -27,7 +29,7 @@ Scripts/build-gameplayfootball-macos.sh --lan-join=192.168.0.10 --run
 Scripts/test-gameplayfootball-lan.sh
 ```
 
-`--lan-host`와 `--lan-join`은 원본 디버그 빠른 경기를 자동으로 켠다. `--lan-port=38245`로 양쪽 UDP 포트를 함께 바꿀 수 있다. 현재는 방 검색·승인·연결 상태 UI가 없으므로 친구용 실행 방식이 아닌 G2 개발 시험용이다. macOS 방화벽이 UDP 수신을 막는 경우 허용이 필요하다. 빌드 결과의 경로에서 `Scripts/package-gameplayfootball-dev-app.sh /tmp/…/build`를 실행하면 개발용 `.app`을 만들 수 있지만 동적 라이브러리를 포함한 배포용 앱은 아니다.
+`--lan-host`와 `--lan-join`은 원본 디버그 빠른 경기를 자동으로 켠다. `--lan-port=38245`로 양쪽 UDP 포트를 함께 바꿀 수 있다. 현재는 방 검색·승인·연결 상태 UI가 없으므로 친구용 실행 방식이 아닌 G2 개발 시험용이다. macOS 방화벽이 UDP 수신을 막는 경우 허용이 필요하다. 모든 빌드는 기본으로 `dist/SIU Football.app`을 만들며 `--app-output=PATH`로 위치를 바꿀 수 있다. 이 앱은 동적 라이브러리를 포함한 배포용 앱은 아니다.
 
 스크립트는 소스를 `/tmp/siu-gameplayfootball.*`에 복사해 빌드한다. 원본 체크아웃의 CMake 시작이 macOS의 경로 정규화 단계에서 멈춘 현상이 있어, 작업 디렉터리도 임시 경로로 옮긴다. 스크립트가 빌드 실행 파일과 로그 경로를 출력한다. 빌드 후 재실행은 표시된 `build` 디렉터리에서 `./gameplayfootball`을 실행한다. 게임 데이터와 설정은 그 디렉터리에 복사된다.
 
