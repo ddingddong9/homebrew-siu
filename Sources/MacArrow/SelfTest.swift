@@ -102,6 +102,24 @@ enum SelfTest {
         _ = ArenaPhysics.capture(&stolen, by: .right, player: CGPoint(x: 0.5, y: 0.5))
         ArenaPhysics.dispossess(&stolen, direction: CGPoint(x: -1, y: 0))
         check(stolen.carrier == nil && stolen.vx < 0, "fall releases possession")
+        var lofted = ArenaBall(x: 0.52, y: 0.5)
+        _ = ArenaPhysics.capture(&lofted, by: .left, player: CGPoint(x: 0.5, y: 0.5))
+        check(ArenaPhysics.rainbow(&lofted, from: CGPoint(x: 0.5, y: 0.5),
+                                   direction: CGPoint(x: 1, y: 0)), "rainbow starts with possession")
+        for _ in 0..<18 { _ = ArenaPhysics.step(&lofted, dt: 1.0 / 60) }
+        check(lofted.z > 0.05 && lofted.x > 0.59 && lofted.carrier == nil,
+              "rainbow lifts ball past defender")
+        check(!ArenaPhysics.capture(&lofted, by: .right,
+                                    player: CGPoint(x: lofted.x, y: lofted.y)),
+              "airborne ball cannot be stolen")
+        for _ in 0..<40 { _ = ArenaPhysics.step(&lofted, dt: 1.0 / 60) }
+        check(lofted.z == 0 && lofted.vz == 0, "rainbow lands")
+        var bending = ArenaBall(x: 0.51, y: 0.3)
+        check(ArenaPhysics.curveKick(&bending, from: CGPoint(x: 0.5, y: 0.3),
+                                     direction: CGPoint(x: 1, y: 0)), "curve shot starts")
+        for _ in 0..<18 { _ = ArenaPhysics.step(&bending, dt: 1.0 / 60) }
+        check(bending.vy > 0 && bending.y > 0.3 && bending.carrier == nil,
+              "curve shot bends toward field center")
         let leftRestart = ArenaPhysics.startingX(conceding: .left)
         let rightRestart = ArenaPhysics.startingX(conceding: .right)
         check(abs(leftRestart.left - 0.5) < abs(leftRestart.right - 0.5),
@@ -133,6 +151,11 @@ enum SelfTest {
         check((try? JSONDecoder().decode(MatchMessage.self,
               from: JSONEncoder().encode(turn)))?.kind == .marseille,
               "marseille turn packet")
+        let skillPacket = MatchMessage(kind: .ball, matchID: UUID(), x: 0.6, y: 0.5,
+                                       vx: 0.35, vy: 0, z: 0.1, vz: 0.2, curve: 0)
+        check((try? JSONDecoder().decode(MatchMessage.self,
+              from: JSONEncoder().encode(skillPacket)))?.z == 0.1,
+              "rainbow height packet")
 
         let installed = SIUVersion("1.9.0-beta.1")
         check(installed != nil && SIUVersion("v1.9.0-beta.2")! > installed!,
@@ -204,8 +227,11 @@ enum SelfTest {
         let packets: [(MatchTransport, MatchMessage)] = [
             (a, MatchMessage(kind: .start, matchID: matchID, duration: 60)),
             (a, MatchMessage(kind: .ball, matchID: matchID, x: 0.5, y: 0.3, vx: 0, vy: 0,
-                             possession: 1)),
+                             z: 0.1, vz: 0.2, curve: 0, possession: 1)),
             (a, MatchMessage(kind: .marseille, matchID: matchID, actorID: GameIdentity.localID)),
+            (a, MatchMessage(kind: .rainbow, matchID: matchID, actorID: GameIdentity.localID)),
+            (a, MatchMessage(kind: .phantom, matchID: matchID, y: 1,
+                             actorID: GameIdentity.localID)),
             (a, MatchMessage(kind: .kickoff, matchID: matchID, duration: 2, x: 1)),
             (a, MatchMessage(kind: .fall, matchID: matchID, x: 1)),
             (a, MatchMessage(kind: .powerShot, matchID: matchID, actorID: GameIdentity.localID)),
@@ -214,6 +240,7 @@ enum SelfTest {
             (b, MatchMessage(kind: .player, matchID: matchID, x: 0.7, y: 0.5, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .kick, matchID: matchID, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .marseille, matchID: matchID)),
+            (b, MatchMessage(kind: .curveShot, matchID: matchID, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .stop, matchID: matchID))
         ]
         for (sender, packet) in packets {
@@ -222,16 +249,17 @@ enum SelfTest {
             }
         }
         let deadline = Date().addingTimeInterval(4)
-        while (seenByA.count < 4 || seenByB.count < 8 || acknowledged < 12) && Date() < deadline {
+        while (seenByA.count < 5 || seenByB.count < 10 || acknowledged < 15) && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
         a.stop(); b.stop()
         var failures: [String] = []
-        if seenByA != Set([.player, .kick, .marseille, .stop]) { failures.append("peer A events") }
-        if seenByB != Set([.start, .ball, .kickoff, .fall, .powerShot, .marseille, .pause, .resume]) {
+        if seenByA != Set([.player, .kick, .marseille, .curveShot, .stop]) { failures.append("peer A events") }
+        if seenByB != Set([.start, .ball, .kickoff, .fall, .powerShot, .marseille,
+                           .rainbow, .phantom, .pause, .resume]) {
             failures.append("peer B events")
         }
-        if acknowledged != 12 { failures.append("two-peer acknowledgements") }
+        if acknowledged != 15 { failures.append("two-peer acknowledgements") }
         return failures
     }
 

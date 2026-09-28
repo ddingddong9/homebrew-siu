@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.10.0</string>
+    <string>1.11.0</string>
     <key>SIUReleaseVersion</key>
-    <string>1.10.0-beta.1</string>
+    <string>1.11.0-beta.1</string>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>

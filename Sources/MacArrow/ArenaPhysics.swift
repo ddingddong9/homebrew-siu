@@ -6,6 +6,10 @@ struct ArenaBall {
     var vx: Double = 0
     var vy: Double = 0
     var carrier: FieldEdge?
+    var z: Double = 0
+    var vz: Double = 0
+    var curve: Double = 0
+    var recatchDelay: Double = 0
 
     static let kickoff = ArenaBall()
 }
@@ -28,8 +32,22 @@ enum ArenaPhysics {
     static func step(_ ball: inout ArenaBall, dt rawDelta: TimeInterval) -> ArenaStepResult {
         let dt = min(max(rawDelta, 0), 0.05)
         if ball.carrier == nil {
+            if ball.curve != 0 {
+                let angle = ball.curve * dt
+                let vx = ball.vx * cos(angle) - ball.vy * sin(angle)
+                ball.vy = ball.vx * sin(angle) + ball.vy * cos(angle)
+                ball.vx = vx
+                ball.curve *= pow(0.96, dt * 60)
+                if abs(ball.curve) < 0.02 { ball.curve = 0 }
+            }
             ball.x += ball.vx * dt
             ball.y += ball.vy * dt
+            if ball.z > 0 || ball.vz > 0 {
+                ball.z += ball.vz * dt
+                ball.vz -= 1.4 * dt
+                if ball.z <= 0 { ball.z = 0; ball.vz = 0 }
+            }
+            ball.recatchDelay = max(0, ball.recatchDelay - dt)
             let drag = pow(0.985, dt * 60)
             ball.vx *= drag
             ball.vy *= drag
@@ -43,11 +61,11 @@ enum ArenaPhysics {
             ball.vy = -abs(ball.vy) * 0.68
         }
         if ball.x < 0.04 {
-            if (0.38...0.62).contains(ball.y) { return .goalAtLeft }
+            if (0.38...0.62).contains(ball.y) && ball.z < 0.14 { return .goalAtLeft }
             ball.x = 0.04
             ball.vx = abs(ball.vx) * 0.68
         } else if ball.x > 0.96 {
-            if (0.38...0.62).contains(ball.y) { return .goalAtRight }
+            if (0.38...0.62).contains(ball.y) && ball.z < 0.14 { return .goalAtRight }
             ball.x = 0.96
             ball.vx = -abs(ball.vx) * 0.68
         }
@@ -57,13 +75,38 @@ enum ArenaPhysics {
 
     static func kick(_ ball: inout ArenaBall, from player: CGPoint, direction: CGPoint,
                      power: Double = 1) -> Bool {
-        guard hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
+        guard ball.z < 0.03, hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
         let length = hypot(direction.x, direction.y)
         guard length > 0.01 else { return false }
         let speed = 1.1 * min(max(power, 0.2), 1.5)
         ball.vx = direction.x / length * speed
         ball.vy = direction.y / length * speed
         ball.carrier = nil
+        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.recatchDelay = 0.18
+        return true
+    }
+
+    static func curveKick(_ ball: inout ArenaBall, from player: CGPoint,
+                          direction: CGPoint) -> Bool {
+        guard kick(&ball, from: player, direction: direction) else { return false }
+        let inward = ball.y < 0.5 ? 1.0 : -1.0
+        ball.curve = inward * (direction.x >= 0 ? 1 : -1) * 1.8
+        ball.recatchDelay = 0.28
+        return true
+    }
+
+    static func rainbow(_ ball: inout ArenaBall, from player: CGPoint,
+                        direction: CGPoint) -> Bool {
+        guard ball.carrier != nil, hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
+        let length = hypot(direction.x, direction.y)
+        guard length > 0.01 else { return false }
+        ball.carrier = nil
+        ball.vx = direction.x / length * 0.35
+        ball.vy = direction.y / length * 0.35
+        ball.z = 0.015
+        ball.vz = 0.56
+        ball.curve = 0
+        ball.recatchDelay = 0.72
         return true
     }
 
@@ -73,7 +116,7 @@ enum ArenaPhysics {
 
     static func powerKick(_ ball: inout ArenaBall, from player: CGPoint,
                           toward goal: FieldEdge) -> Bool {
-        guard hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
+        guard ball.z < 0.03, hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
         let targetX = goal == .right ? 0.98 : 0.02
         let dx = targetX - ball.x
         let dy = 0.5 - ball.y
@@ -82,15 +125,18 @@ enum ArenaPhysics {
         ball.vx = dx / length * 2.2
         ball.vy = dy / length * 2.2
         ball.carrier = nil
+        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.recatchDelay = 0.18
         return true
     }
 
     static func capture(_ ball: inout ArenaBall, by side: FieldEdge, player: CGPoint) -> Bool {
-        guard ball.carrier == nil, hypot(ball.vx, ball.vy) < 0.7,
+        guard ball.carrier == nil, ball.z < 0.02, ball.recatchDelay <= 0,
+              hypot(ball.vx, ball.vy) < 0.7,
               hypot(ball.x - player.x, ball.y - player.y) < 0.064 else { return false }
         ball.carrier = side
         ball.vx = 0
         ball.vy = 0
+        ball.z = 0; ball.vz = 0; ball.curve = 0
         return true
     }
 
@@ -102,12 +148,14 @@ enum ArenaPhysics {
         ball.y = min(max(player.y + sin(angle) * 0.046 + cos(angle) * 0.012, 0.08), 0.92)
         ball.vx = 0
         ball.vy = 0
+        ball.z = 0; ball.vz = 0; ball.curve = 0
     }
 
     static func dispossess(_ ball: inout ArenaBall, direction: CGPoint) {
         ball.carrier = nil
         ball.vx = direction.x * 0.28
         ball.vy = direction.y * 0.28
+        ball.recatchDelay = 0.2
     }
 
     @discardableResult
@@ -115,7 +163,7 @@ enum ArenaPhysics {
         let dx = ball.x - player.x
         let dy = ball.y - player.y
         let distance = hypot(dx, dy)
-        guard distance < 0.038 else { return false }
+        guard ball.z < 0.02, distance < 0.038 else { return false }
         let angle = distance > 0.001 ? atan2(dy, dx) : atan2(direction.y, direction.x)
         ball.x = min(max(player.x + cos(angle) * 0.038, 0.04), 0.96)
         ball.y = min(max(player.y + sin(angle) * 0.038, 0.08), 0.92)

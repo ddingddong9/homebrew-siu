@@ -363,7 +363,7 @@ private final class PlayerView: NSView {
         switch event.keyCode {
         case 123, 124, 125, 126:
             pressedKeys.insert(event.keyCode)
-        case 49: if !event.isARepeat { onKickAttempt?() }
+        case 2: if !event.isARepeat { onKickAttempt?() }
         case 0: if !event.isARepeat { onTackleAttempt?() } // A
         default: super.keyDown(with: event)
         }
@@ -469,7 +469,7 @@ private final class PlayerView: NSView {
     }
 
     private func drawHint() {
-        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 이동·방향 · Space 슛 · A 태클")
+        let text = isStunned ? "태클당함!" : (feedbackFrames > 0 ? "공에 더 가까이 가세요!" : "방향키 이동·방향 · D 슛 · A 태클")
         let paragraph = NSMutableParagraphStyle(); paragraph.alignment = .center
         NSString(string: text).draw(
             in: NSRect(x: 10, y: 365, width: 250, height: 22),

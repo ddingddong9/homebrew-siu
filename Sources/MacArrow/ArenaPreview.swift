@@ -21,6 +21,8 @@ final class ArenaPreviewController {
     private var powerPending = false
     private var fireUntil: TimeInterval = 0
     private var lastTurnAt: TimeInterval = 0
+    private var lastRainbowAt: TimeInterval = 0
+    private var lastPhantomAt: TimeInterval = 0
     var isRunning: Bool { timer != nil }
 
     init() {
@@ -30,6 +32,15 @@ final class ArenaPreviewController {
                   ProcessInfo.processInfo.systemUptime >= self.kickoffAt,
                   ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left) else { return }
             if !ArenaPhysics.kick(&self.ball, from: position, direction: direction) {
+                self.arena.showFeedback("공에 더 가까이 가세요!")
+            } else { self.kickoffOwner = nil }
+        }
+        arena.onCurveShot = { [weak self] position, direction in
+            guard let self else { return }
+            guard self.pausedAt == nil, !self.powerPending,
+                  ProcessInfo.processInfo.systemUptime >= self.kickoffAt,
+                  ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left) else { return }
+            if !ArenaPhysics.curveKick(&self.ball, from: position, direction: direction) {
                 self.arena.showFeedback("공에 더 가까이 가세요!")
             } else { self.kickoffOwner = nil }
         }
@@ -65,6 +76,33 @@ final class ArenaPreviewController {
             self.lastTurnAt = now
             self.arena.startMarseille(local: true)
         }
+        arena.onRainbow = { [weak self] in
+            guard let self else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard self.pausedAt == nil, !self.powerPending, now >= self.kickoffAt,
+                  now - self.lastRainbowAt > 1.2 else { return }
+            guard self.ball.carrier == .left else {
+                self.arena.showFeedback("공을 소유해야 사포를 할 수 있어요")
+                return
+            }
+            if ArenaPhysics.rainbow(&self.ball, from: self.arena.localPosition,
+                                    direction: self.arena.localDirection) {
+                self.lastRainbowAt = now
+                self.arena.animateRainbow(local: true)
+            }
+        }
+        arena.onPhantom = { [weak self] vertical in
+            guard let self else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            guard self.pausedAt == nil, !self.powerPending, now >= self.kickoffAt,
+                  now - self.lastPhantomAt > 0.9 else { return }
+            guard self.ball.carrier == .left else {
+                self.arena.showFeedback("공을 소유해야 팬텀 드리블을 할 수 있어요")
+                return
+            }
+            self.lastPhantomAt = now
+            self.arena.startPhantom(local: true, vertical: vertical)
+        }
         arena.onPauseToggle = { [weak self] in self?.togglePause() }
         arena.onResume = { [weak self] in self?.resume() }
         arena.onEnd = { [weak self] in self?.stop() }
@@ -90,6 +128,8 @@ final class ArenaPreviewController {
         powerPending = false
         fireUntil = 0
         lastTurnAt = 0
+        lastRainbowAt = 0
+        lastPhantomAt = 0
         startedAt = ProcessInfo.processInfo.systemUptime
         lastTick = startedAt
         arena.window?.title = "SIU — 경기장 미리보기 (AI 연습)"
@@ -123,6 +163,8 @@ final class ArenaPreviewController {
         if opponentFallenUntil > 0 { opponentFallenUntil += elapsed }
         if powerPending { powerReleaseAt += elapsed; fireUntil += elapsed }
         if lastTurnAt > 0 { lastTurnAt += elapsed }
+        if lastRainbowAt > 0 { lastRainbowAt += elapsed }
+        if lastPhantomAt > 0 { lastPhantomAt += elapsed }
         lastTick = ProcessInfo.processInfo.systemUptime
         arena.setPaused(false, elapsed: elapsed)
     }
@@ -171,7 +213,8 @@ final class ArenaPreviewController {
             }
             if now >= opponentFallenUntil && kickoffOwner == nil,
                now - lastOpponentTackleAt > 3,
-               arena.marseilleProgress(side: .left) == nil,
+               arena.marseilleProgress(side: .left) == nil &&
+               arena.phantomProgress(side: .left) == nil,
                hypot(opponent.x - arena.localPosition.x,
                      opponent.y - arena.localPosition.y) < 0.07 {
                 lastOpponentTackleAt = now
