@@ -6,6 +6,9 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     var onTackle: ((CGPoint, CGPoint) -> Void)?
     var onPowerShot: ((CGPoint) -> Void)?
     var onMarseille: (() -> Void)?
+    var onRainbow: (() -> Void)?
+    var onPhantom: ((Double) -> Void)?
+    var onCurveShot: ((CGPoint, CGPoint) -> Void)?
     var onPauseToggle: (() -> Void)?
     var onResume: (() -> Void)?
     var onEnd: (() -> Void)?
@@ -30,6 +33,9 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
         view.onTackle = { [weak self] position, direction in self?.onTackle?(position, direction) }
         view.onPowerShot = { [weak self] position in self?.onPowerShot?(position) }
         view.onMarseille = { [weak self] in self?.onMarseille?() }
+        view.onRainbow = { [weak self] in self?.onRainbow?() }
+        view.onPhantom = { [weak self] vertical in self?.onPhantom?(vertical) }
+        view.onCurveShot = { [weak self] position, direction in self?.onCurveShot?(position, direction) }
         view.onPauseToggle = { [weak self] in self?.onPauseToggle?() }
     }
 
@@ -63,6 +69,9 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     func startPowerCinematic(local: Bool) { arenaView.startPowerCinematic(local: local) }
     func startMarseille(local: Bool) { arenaView.startMarseille(local: local) }
     func marseilleProgress(side: FieldEdge) -> Double? { arenaView.marseilleProgress(side: side) }
+    func startPhantom(local: Bool, vertical: Double) { arenaView.startPhantom(local: local, vertical: vertical) }
+    func phantomProgress(side: FieldEdge) -> Double? { arenaView.phantomProgress(side: side) }
+    func animateRainbow(local: Bool) { arenaView.animateRainbow(local: local) }
     func setFireBall(_ active: Bool) { arenaView.fireBall = active; arenaView.needsDisplay = true }
     func animateRemoteKick() { arenaView.remoteKickAt = ProcessInfo.processInfo.systemUptime }
     func animateRemoteTackle() { arenaView.remoteTackleAt = ProcessInfo.processInfo.systemUptime }
@@ -99,7 +108,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
         title.alignment = .center
         title.frame = NSRect(x: 20, y: 184, width: 300, height: 30)
         content.addSubview(title)
-        let instructions = NSTextField(labelWithString: "방향키 이동 · Space 슛 · A 태클 · Z 마르세유턴")
+        let instructions = NSTextField(labelWithString: "방향키 이동 · D 슛 · A 태클 · S 사포 · X 팬텀 · Z 턴")
         instructions.alignment = .center
         instructions.textColor = .secondaryLabelColor
         instructions.frame = NSRect(x: 20, y: 152, width: 300, height: 22)
@@ -146,6 +155,9 @@ private final class ArenaView: NSView {
     var onTackle: ((CGPoint, CGPoint) -> Void)?
     var onPowerShot: ((CGPoint) -> Void)?
     var onMarseille: (() -> Void)?
+    var onRainbow: (() -> Void)?
+    var onPhantom: ((Double) -> Void)?
+    var onCurveShot: ((CGPoint, CGPoint) -> Void)?
     var onPauseToggle: (() -> Void)?
     var localPosition = CGPoint(x: 0.25, y: 0.5)
     var remotePosition = CGPoint(x: 0.75, y: 0.5)
@@ -174,6 +186,12 @@ private final class ArenaView: NSView {
     private var localTurnAt: TimeInterval = -.infinity
     private var remoteTurnAt: TimeInterval = -.infinity
     private let turnDuration: TimeInterval = 0.72
+    private var localPhantomAt: TimeInterval = -.infinity
+    private var remotePhantomAt: TimeInterval = -.infinity
+    private var phantomVertical: CGFloat = 1
+    private let phantomDuration: TimeInterval = 0.20
+    private var zHeld = false
+    private var zConsumed = false
     private var homeSide: FieldEdge = .left
     private var keys = Set<UInt16>()
     private var sprint = false
@@ -226,6 +244,10 @@ private final class ArenaView: NSView {
         powerStartedAt = -.infinity
         localTurnAt = -.infinity
         remoteTurnAt = -.infinity
+        localPhantomAt = -.infinity
+        remotePhantomAt = -.infinity
+        zHeld = false
+        zConsumed = false
         keys.removeAll()
         needsDisplay = true
     }
@@ -250,6 +272,27 @@ private final class ArenaView: NSView {
         return (0..<turnDuration).contains(elapsed) ? elapsed / turnDuration : nil
     }
 
+    func startPhantom(local: Bool, vertical: Double) {
+        if local {
+            localPhantomAt = ProcessInfo.processInfo.systemUptime
+            phantomVertical = vertical >= 0 ? 1 : -1
+            velocity = .zero
+        } else { remotePhantomAt = ProcessInfo.processInfo.systemUptime }
+        needsDisplay = true
+    }
+
+    func phantomProgress(side: FieldEdge) -> Double? {
+        let started = side == homeSide ? localPhantomAt : remotePhantomAt
+        let elapsed = visualNow - started
+        return (0..<phantomDuration).contains(elapsed) ? elapsed / phantomDuration : nil
+    }
+
+    func animateRainbow(local: Bool) {
+        if local { kickAt = ProcessInfo.processInfo.systemUptime }
+        else { remoteKickAt = ProcessInfo.processInfo.systemUptime }
+        needsDisplay = true
+    }
+
     func setPaused(_ value: Bool, elapsed: TimeInterval) {
         if paused && !value && elapsed > 0 {
             if stunnedUntil > 0 { stunnedUntil += elapsed }
@@ -259,6 +302,8 @@ private final class ArenaView: NSView {
             if powerStartedAt.isFinite { powerStartedAt += elapsed }
             if localTurnAt.isFinite { localTurnAt += elapsed }
             if remoteTurnAt.isFinite { remoteTurnAt += elapsed }
+            if localPhantomAt.isFinite { localPhantomAt += elapsed }
+            if remotePhantomAt.isFinite { remotePhantomAt += elapsed }
             if kickAt.isFinite { kickAt += elapsed }
             if tackleAt.isFinite { tackleAt += elapsed }
             if remoteKickAt.isFinite { remoteKickAt += elapsed }
@@ -267,7 +312,7 @@ private final class ArenaView: NSView {
         }
         paused = value
         if value { pauseStartedAt = ProcessInfo.processInfo.systemUptime }
-        if value { keys.removeAll(); velocity = .zero }
+        if value { keys.removeAll(); velocity = .zero; zHeld = false; zConsumed = false }
         needsDisplay = true
     }
 
@@ -286,6 +331,8 @@ private final class ArenaView: NSView {
         stunnedUntil = fallStartedAt + fallDuration
         velocity = .zero
         keys.removeAll()
+        zHeld = false
+        zConsumed = false
         needsDisplay = true
     }
 
@@ -300,13 +347,15 @@ private final class ArenaView: NSView {
         let dt = min(max(rawDelta, 0), 0.05)
         let turning = (0..<turnDuration).contains(ProcessInfo.processInfo.systemUptime - localTurnAt)
         if window?.isKeyWindow != true || ProcessInfo.processInfo.systemUptime < stunnedUntil {
-            keys.removeAll(); sprint = false
+            keys.removeAll(); sprint = false; zHeld = false; zConsumed = false
         }
+        let phantom = (0..<phantomDuration).contains(ProcessInfo.processInfo.systemUptime - localPhantomAt)
         let dx = CGFloat((keys.contains(124) ? 1 : 0) - (keys.contains(123) ? 1 : 0))
         let dy = CGFloat((keys.contains(126) ? 1 : 0) - (keys.contains(125) ? 1 : 0))
         let length = hypot(dx, dy)
         let speed: CGFloat = sprint ? 0.48 : 0.33
-        let target = turning ? CGPoint(x: localDirection.x * 0.19, y: localDirection.y * 0.19) :
+        let target = phantom ? CGPoint(x: 0, y: phantomVertical * 0.72) :
+            turning ? CGPoint(x: localDirection.x * 0.19, y: localDirection.y * 0.19) :
             (length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero)
         let blend = min(CGFloat(1), CGFloat(dt) * 14)
         velocity.x += (target.x - velocity.x) * blend
@@ -316,7 +365,7 @@ private final class ArenaView: NSView {
         let remoteBlend = min(CGFloat(1), CGFloat(dt) * 12)
         remotePosition.x += (remoteTarget.x - remotePosition.x) * remoteBlend
         remotePosition.y += (remoteTarget.y - remotePosition.y) * remoteBlend
-        if length > 0 && !turning {
+        if length > 0 && !turning && !phantom {
             let current = atan2(localDirection.y, localDirection.x)
             let wanted = atan2(dy, dx)
             let delta = atan2(sin(wanted - current), cos(wanted - current))
@@ -335,21 +384,35 @@ private final class ArenaView: NSView {
         guard !paused, !isLocalFallen else { return }
         switch event.keyCode {
         case 123, 124, 125, 126: keys.insert(event.keyCode)
-        case 49: if !event.isARepeat {
+        case 2: if !event.isARepeat {
             kickAt = ProcessInfo.processInfo.systemUptime
-            onKick?(localPosition, localDirection)
+            if zHeld { zConsumed = true; onCurveShot?(localPosition, localDirection) }
+            else { onKick?(localPosition, localDirection) }
         }
+        case 49: break
         case 0: if !event.isARepeat {
             tackleAt = ProcessInfo.processInfo.systemUptime
             onTackle?(localPosition, localDirection)
         }
         case 3: if !event.isARepeat { onPowerShot?(localPosition) }
-        case 6: if !event.isARepeat { onMarseille?() }
+        case 6: if !event.isARepeat { zHeld = true; zConsumed = false }
+        case 1: if !event.isARepeat { onRainbow?() }
+        case 7: if !event.isARepeat {
+            let vertical: Double = keys.contains(125) ? -1 : (keys.contains(126) ? 1 :
+                (localPosition.y < 0.5 ? 1 : -1))
+            onPhantom?(vertical)
+        }
         default: super.keyDown(with: event)
         }
     }
 
     override func keyUp(with event: NSEvent) {
+        if event.keyCode == 6 {
+            if zHeld && !zConsumed && !paused && !isLocalFallen { onMarseille?() }
+            zHeld = false
+            zConsumed = false
+            return
+        }
         if keys.contains(event.keyCode) { keys.remove(event.keyCode) }
         else { super.keyUp(with: event) }
     }
@@ -438,6 +501,14 @@ private final class ArenaView: NSView {
     private func drawPlayer(at position: CGPoint, direction: CGPoint, isLocal: Bool) {
         let center = point(position.x, position.y)
         let color = isLocal ? NSColor.systemYellow : NSColor.systemCyan
+        if phantomProgress(side: isLocal ? homeSide : (homeSide == .left ? .right : .left)) != nil {
+            for index in 1...3 {
+                let trail = NSRect(x: center.x - 27, y: center.y - CGFloat(index * 14),
+                                   width: 54, height: 14)
+                color.withAlphaComponent(0.18 / CGFloat(index)).setFill()
+                NSBezierPath(ovalIn: trail).fill()
+            }
+        }
         let marker = NSBezierPath(ovalIn: NSRect(x: center.x - 32, y: center.y - 20, width: 64, height: 30))
         color.withAlphaComponent(0.27).setFill(); marker.fill()
         marker.lineWidth = 3; color.setStroke(); marker.stroke()
@@ -500,6 +571,7 @@ private final class ArenaView: NSView {
 
     private func drawBall() {
         let center = point(ball.x, ball.y)
+        let lift = CGFloat(ball.z) * bounds.height * 0.72
         if fireBall && effectsEnabled {
             let speed = hypot(ball.vx, ball.vy)
             let ux = speed > 0.01 ? ball.vx / speed : 1
@@ -520,7 +592,7 @@ private final class ArenaView: NSView {
         }
         let shadow = NSBezierPath(ovalIn: NSRect(x: center.x - 18, y: center.y - 15, width: 36, height: 14))
         NSColor.black.withAlphaComponent(0.38).setFill(); shadow.fill()
-        NSString(string: "⚽️").draw(in: NSRect(x: center.x - 22, y: center.y - 16, width: 44, height: 44),
+        NSString(string: "⚽️").draw(in: NSRect(x: center.x - 22, y: center.y - 16 + lift, width: 44, height: 44),
                                    withAttributes: [.font: NSFont.systemFont(ofSize: 34)])
     }
 
@@ -547,7 +619,7 @@ private final class ArenaView: NSView {
     }
 
     private func drawControls() {
-        NSString(string: "방향키 이동·방향  ·  Shift 달리기  ·  Space 슛  ·  A 태클  ·  Z 마르세유턴").draw(
+        NSString(string: "방향키 이동·방향  ·  Shift 달리기  ·  D 슛  ·  A 태클  ·  S 사포  ·  X 팬텀  ·  Z 마르세유턴").draw(
             in: NSRect(x: 0, y: 9, width: bounds.width, height: 20),
             withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium),
                              .foregroundColor: NSColor.white.withAlphaComponent(0.9),
