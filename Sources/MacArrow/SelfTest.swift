@@ -69,6 +69,20 @@ enum SelfTest {
         check(arenaBall.vx > 0 && abs(arenaBall.vy) < 0.001, "arena 360-degree direction")
         check(!ArenaPhysics.kick(&arenaBall, from: CGPoint(x: 0.1, y: 0.1),
                                  direction: CGPoint(x: 1, y: 0)), "arena kick range")
+        var assistedRight = ArenaBall(x: 0.45, y: 0.3)
+        check(ArenaPhysics.kick(&assistedRight, from: CGPoint(x: 0.45, y: 0.3),
+                                direction: CGPoint(x: 1, y: 0), aimToward: .right) &&
+              assistedRight.vx > 0 && assistedRight.vy > 0,
+              "ordinary shot gently corrects toward right goal")
+        var assistedLeft = ArenaBall(x: 0.55, y: 0.7)
+        check(ArenaPhysics.kick(&assistedLeft, from: CGPoint(x: 0.55, y: 0.7),
+                                direction: CGPoint(x: -1, y: 0), aimToward: .left) &&
+              assistedLeft.vx < 0 && assistedLeft.vy < 0,
+              "ordinary shot gently corrects toward left goal")
+        var intentionalBackpass = ArenaBall(x: 0.45, y: 0.3)
+        _ = ArenaPhysics.kick(&intentionalBackpass, from: CGPoint(x: 0.45, y: 0.3),
+                              direction: CGPoint(x: -1, y: 0), aimToward: .right)
+        check(intentionalBackpass.vx < 0, "ordinary shot still respects opposite aiming")
         var leftGoal = ArenaBall(x: 0.041, y: 0.5, vx: -1, vy: 0)
         check(ArenaPhysics.step(&leftGoal, dt: 1.0 / 60) == .goalAtLeft, "arena left goal")
         var rightGoal = ArenaBall(x: 0.959, y: 0.5, vx: 1, vy: 0)
@@ -116,10 +130,34 @@ enum SelfTest {
         check(lofted.z == 0 && lofted.vz == 0, "rainbow lands")
         var bending = ArenaBall(x: 0.51, y: 0.3)
         check(ArenaPhysics.curveKick(&bending, from: CGPoint(x: 0.5, y: 0.3),
-                                     direction: CGPoint(x: 1, y: 0)), "curve shot starts")
+                                     direction: CGPoint(x: -1, y: 0), toward: .right) &&
+              bending.vx > 0, "curve shot starts toward opponent despite facing away")
         for _ in 0..<18 { _ = ArenaPhysics.step(&bending, dt: 1.0 / 60) }
         check(bending.vy > 0 && bending.y > 0.3 && bending.carrier == nil,
               "curve shot bends toward field center")
+        var leftCurve = ArenaBall(x: 0.49, y: 0.7)
+        check(ArenaPhysics.curveKick(&leftCurve, from: CGPoint(x: 0.49, y: 0.7),
+                                     direction: CGPoint(x: 1, y: 0), toward: .left) &&
+              leftCurve.vx < 0, "left-side curve shot starts toward opponent goal")
+        for _ in 0..<18 { _ = ArenaPhysics.step(&leftCurve, dt: 1.0 / 60) }
+        check(leftCurve.vy < 0 && leftCurve.y < 0.7,
+              "left-side curve shot bends toward field center")
+        func reachesGoal(_ initial: ArenaBall, at expected: ArenaStepResult) -> Bool {
+            var simulated = initial
+            for _ in 0..<180 {
+                let result = ArenaPhysics.step(&simulated, dt: 1.0 / 60)
+                if result != .inPlay { return result == expected }
+            }
+            return false
+        }
+        var rightGoalCurve = ArenaBall(x: 0.5, y: 0.3)
+        _ = ArenaPhysics.curveKick(&rightGoalCurve, from: CGPoint(x: 0.5, y: 0.3),
+                                   direction: CGPoint(x: -1, y: 0), toward: .right)
+        check(reachesGoal(rightGoalCurve, at: .goalAtRight), "curved shot reaches right goal")
+        var leftGoalCurve = ArenaBall(x: 0.5, y: 0.7)
+        _ = ArenaPhysics.curveKick(&leftGoalCurve, from: CGPoint(x: 0.5, y: 0.7),
+                                   direction: CGPoint(x: 1, y: 0), toward: .left)
+        check(reachesGoal(leftGoalCurve, at: .goalAtLeft), "curved shot reaches left goal")
         let leftRestart = ArenaPhysics.startingX(conceding: .left)
         let rightRestart = ArenaPhysics.startingX(conceding: .right)
         check(abs(leftRestart.left - 0.5) < abs(leftRestart.right - 0.5),

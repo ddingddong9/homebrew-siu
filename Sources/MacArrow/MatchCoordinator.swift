@@ -445,8 +445,10 @@ final class MatchCoordinator {
         let now = ProcessInfo.processInfo.systemUptime
         guard canAct(side: side), ArenaPhysics.mayTakeKickoff(owner: kickoffOwner, player: side),
               now - lastKickAt > 0.28,
-              (curved ? ArenaPhysics.curveKick(&ball, from: position, direction: direction) :
-                         ArenaPhysics.kick(&ball, from: position, direction: direction)) else { return false }
+              (curved ? ArenaPhysics.curveKick(&ball, from: position, direction: direction,
+                                                toward: side == .left ? .right : .left) :
+                         ArenaPhysics.kick(&ball, from: position, direction: direction,
+                                           aimToward: side == .left ? .right : .left)) else { return false }
         lastKickAt = now
         if kickoffOwner != nil { kickoffOwner = nil; sendScore(goal: false) }
         return true

@@ -31,7 +31,8 @@ final class ArenaPreviewController {
             guard self.pausedAt == nil, !self.powerPending,
                   ProcessInfo.processInfo.systemUptime >= self.kickoffAt,
                   ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left) else { return }
-            if !ArenaPhysics.kick(&self.ball, from: position, direction: direction) {
+            if !ArenaPhysics.kick(&self.ball, from: position, direction: direction,
+                                  aimToward: .right) {
                 self.arena.showFeedback("공에 더 가까이 가세요!")
             } else { self.kickoffOwner = nil }
         }
@@ -40,7 +41,8 @@ final class ArenaPreviewController {
             guard self.pausedAt == nil, !self.powerPending,
                   ProcessInfo.processInfo.systemUptime >= self.kickoffAt,
                   ArenaPhysics.mayTakeKickoff(owner: self.kickoffOwner, player: .left) else { return }
-            if !ArenaPhysics.curveKick(&self.ball, from: position, direction: direction) {
+            if !ArenaPhysics.curveKick(&self.ball, from: position, direction: direction,
+                                       toward: .right) {
                 self.arena.showFeedback("공에 더 가까이 가세요!")
             } else { self.kickoffOwner = nil }
         }
