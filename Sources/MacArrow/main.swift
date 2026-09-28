@@ -16,6 +16,7 @@ private func usage() {
       siu layout
       siu check <hostname-or-ip> [--port 45678]
       siu demo [--y 0.0...1.0]
+      siu eleven-preview
       siu self-test
 
     Examples:
@@ -146,6 +147,13 @@ case "demo":
     }
     app.run()
 
+case "eleven-preview":
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    let preview = MainActor.assumeIsolated { ElevenMatchWindowController() }
+    MainActor.assumeIsolated { preview.show() }
+    withExtendedLifetime(preview) { app.run() }
+
 case "setup":
     let app = NSApplication.shared
     app.setActivationPolicy(.regular)
@@ -206,7 +214,13 @@ case "asset-check":
             }
         }
     }
-    print("44 transparent character frames OK")
+    guard let blueURL = ResourceBundle.images.url(forResource: "blue-player", withExtension: "png"),
+          let blueBitmap = NSBitmapImageRep(data: try Data(contentsOf: blueURL)),
+          blueBitmap.hasAlpha else {
+        fputs("Missing or non-transparent blue team sprite.\n", stderr)
+        exit(1)
+    }
+    print("44 transparent character frames and blue team sprite OK")
 
 case "--help", "-h", "help":
     usage()
