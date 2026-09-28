@@ -5,6 +5,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     var onKick: ((CGPoint, CGPoint) -> Void)?
     var onTackle: ((CGPoint, CGPoint) -> Void)?
     var onPowerShot: ((CGPoint) -> Void)?
+    var onMarseille: (() -> Void)?
     var onPauseToggle: (() -> Void)?
     var onResume: (() -> Void)?
     var onEnd: (() -> Void)?
@@ -28,6 +29,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
         view.onKick = { [weak self] position, direction in self?.onKick?(position, direction) }
         view.onTackle = { [weak self] position, direction in self?.onTackle?(position, direction) }
         view.onPowerShot = { [weak self] position in self?.onPowerShot?(position) }
+        view.onMarseille = { [weak self] in self?.onMarseille?() }
         view.onPauseToggle = { [weak self] in self?.onPauseToggle?() }
     }
 
@@ -59,6 +61,8 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     func stunRemote() { arenaView.stunRemote() }
     func resetForKickoff(conceding side: FieldEdge) { arenaView.resetForKickoff(conceding: side) }
     func startPowerCinematic(local: Bool) { arenaView.startPowerCinematic(local: local) }
+    func startMarseille(local: Bool) { arenaView.startMarseille(local: local) }
+    func marseilleProgress(side: FieldEdge) -> Double? { arenaView.marseilleProgress(side: side) }
     func setFireBall(_ active: Bool) { arenaView.fireBall = active; arenaView.needsDisplay = true }
     func animateRemoteKick() { arenaView.remoteKickAt = ProcessInfo.processInfo.systemUptime }
     func animateRemoteTackle() { arenaView.remoteTackleAt = ProcessInfo.processInfo.systemUptime }
@@ -95,7 +99,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
         title.alignment = .center
         title.frame = NSRect(x: 20, y: 184, width: 300, height: 30)
         content.addSubview(title)
-        let instructions = NSTextField(labelWithString: "방향키 이동 · Space 슛 · A 태클")
+        let instructions = NSTextField(labelWithString: "방향키 이동 · Space 슛 · A 태클 · Z 마르세유턴")
         instructions.alignment = .center
         instructions.textColor = .secondaryLabelColor
         instructions.frame = NSRect(x: 20, y: 152, width: 300, height: 22)
@@ -141,6 +145,7 @@ private final class ArenaView: NSView {
     var onKick: ((CGPoint, CGPoint) -> Void)?
     var onTackle: ((CGPoint, CGPoint) -> Void)?
     var onPowerShot: ((CGPoint) -> Void)?
+    var onMarseille: (() -> Void)?
     var onPauseToggle: (() -> Void)?
     var localPosition = CGPoint(x: 0.25, y: 0.5)
     var remotePosition = CGPoint(x: 0.75, y: 0.5)
@@ -166,6 +171,9 @@ private final class ArenaView: NSView {
     private var pauseStartedAt: TimeInterval = 0
     private var powerStartedAt: TimeInterval = -.infinity
     private var powerFocusLocal = true
+    private var localTurnAt: TimeInterval = -.infinity
+    private var remoteTurnAt: TimeInterval = -.infinity
+    private let turnDuration: TimeInterval = 0.72
     private var homeSide: FieldEdge = .left
     private var keys = Set<UInt16>()
     private var sprint = false
@@ -216,6 +224,8 @@ private final class ArenaView: NSView {
         remoteKickAt = -.infinity
         remoteTackleAt = -.infinity
         powerStartedAt = -.infinity
+        localTurnAt = -.infinity
+        remoteTurnAt = -.infinity
         keys.removeAll()
         needsDisplay = true
     }
@@ -228,6 +238,18 @@ private final class ArenaView: NSView {
         needsDisplay = true
     }
 
+    func startMarseille(local: Bool) {
+        if local { localTurnAt = ProcessInfo.processInfo.systemUptime; velocity = .zero }
+        else { remoteTurnAt = ProcessInfo.processInfo.systemUptime }
+        needsDisplay = true
+    }
+
+    func marseilleProgress(side: FieldEdge) -> Double? {
+        let started = side == homeSide ? localTurnAt : remoteTurnAt
+        let elapsed = visualNow - started
+        return (0..<turnDuration).contains(elapsed) ? elapsed / turnDuration : nil
+    }
+
     func setPaused(_ value: Bool, elapsed: TimeInterval) {
         if paused && !value && elapsed > 0 {
             if stunnedUntil > 0 { stunnedUntil += elapsed }
@@ -235,6 +257,8 @@ private final class ArenaView: NSView {
             if fallStartedAt.isFinite { fallStartedAt += elapsed }
             if remoteFallStartedAt.isFinite { remoteFallStartedAt += elapsed }
             if powerStartedAt.isFinite { powerStartedAt += elapsed }
+            if localTurnAt.isFinite { localTurnAt += elapsed }
+            if remoteTurnAt.isFinite { remoteTurnAt += elapsed }
             if kickAt.isFinite { kickAt += elapsed }
             if tackleAt.isFinite { tackleAt += elapsed }
             if remoteKickAt.isFinite { remoteKickAt += elapsed }
@@ -274,6 +298,7 @@ private final class ArenaView: NSView {
     func advance(dt rawDelta: TimeInterval) {
         guard !paused else { needsDisplay = true; return }
         let dt = min(max(rawDelta, 0), 0.05)
+        let turning = (0..<turnDuration).contains(ProcessInfo.processInfo.systemUptime - localTurnAt)
         if window?.isKeyWindow != true || ProcessInfo.processInfo.systemUptime < stunnedUntil {
             keys.removeAll(); sprint = false
         }
@@ -281,7 +306,8 @@ private final class ArenaView: NSView {
         let dy = CGFloat((keys.contains(126) ? 1 : 0) - (keys.contains(125) ? 1 : 0))
         let length = hypot(dx, dy)
         let speed: CGFloat = sprint ? 0.48 : 0.33
-        let target = length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero
+        let target = turning ? CGPoint(x: localDirection.x * 0.19, y: localDirection.y * 0.19) :
+            (length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero)
         let blend = min(CGFloat(1), CGFloat(dt) * 14)
         velocity.x += (target.x - velocity.x) * blend
         velocity.y += (target.y - velocity.y) * blend
@@ -290,7 +316,7 @@ private final class ArenaView: NSView {
         let remoteBlend = min(CGFloat(1), CGFloat(dt) * 12)
         remotePosition.x += (remoteTarget.x - remotePosition.x) * remoteBlend
         remotePosition.y += (remoteTarget.y - remotePosition.y) * remoteBlend
-        if length > 0 {
+        if length > 0 && !turning {
             let current = atan2(localDirection.y, localDirection.x)
             let wanted = atan2(dy, dx)
             let delta = atan2(sin(wanted - current), cos(wanted - current))
@@ -318,6 +344,7 @@ private final class ArenaView: NSView {
             onTackle?(localPosition, localDirection)
         }
         case 3: if !event.isARepeat { onPowerShot?(localPosition) }
+        case 6: if !event.isARepeat { onMarseille?() }
         default: super.keyDown(with: event)
         }
     }
@@ -419,6 +446,7 @@ private final class ArenaView: NSView {
             let sinceKick = now - (isLocal ? kickAt : remoteKickAt)
             let sinceTackle = now - (isLocal ? tackleAt : remoteTackleAt)
             let sinceFall = now - (isLocal ? fallStartedAt : remoteFallStartedAt)
+            let sinceTurn = now - (isLocal ? localTurnAt : remoteTurnAt)
             let isFalling = (0..<fallDuration).contains(sinceFall)
             let image: NSImage
             if isFalling {
@@ -436,6 +464,10 @@ private final class ArenaView: NSView {
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.saveGState()
             context.translateBy(x: center.x, y: center.y - 12)
+            if (0..<turnDuration).contains(sinceTurn) {
+                let facing = cos(2 * Double.pi * sinceTurn / turnDuration)
+                context.scaleBy(x: CGFloat(abs(facing) < 0.16 ? (facing < 0 ? -0.16 : 0.16) : facing), y: 1)
+            }
             if direction.x < -0.1 { context.scaleBy(x: -1, y: 1) }
             if isFalling {
                 let tilt: CGFloat
@@ -515,7 +547,7 @@ private final class ArenaView: NSView {
     }
 
     private func drawControls() {
-        NSString(string: "방향키 이동·방향  ·  Shift 달리기  ·  Space 슛  ·  A 태클").draw(
+        NSString(string: "방향키 이동·방향  ·  Shift 달리기  ·  Space 슛  ·  A 태클  ·  Z 마르세유턴").draw(
             in: NSRect(x: 0, y: 9, width: bounds.width, height: 20),
             withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium),
                              .foregroundColor: NSColor.white.withAlphaComponent(0.9),

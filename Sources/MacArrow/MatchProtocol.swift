@@ -3,7 +3,7 @@ import Network
 import CryptoKit
 
 enum MatchEventKind: String, Codable, Hashable {
-    case ping, pong, ack, start, stop, ball, goal, player, kick, tackle, fall, kickoff, powerShot, pause, resume, sync
+    case ping, pong, ack, start, stop, ball, goal, player, kick, tackle, fall, kickoff, powerShot, marseille, pause, resume, sync
 }
 
 struct RoomJoinRequest: Codable {
@@ -40,7 +40,7 @@ enum RoomPairingError: LocalizedError {
 }
 
 struct MatchMessage: Codable {
-    static let protocolVersion = 7
+    static let protocolVersion = 8
     let version: Int
     let id: UUID
     let senderID: UUID
@@ -55,10 +55,12 @@ struct MatchMessage: Codable {
     let actorID: UUID?
     let scores: [String: Int]?
     let remaining: TimeInterval?
+    let possession: Double?
 
     init(kind: MatchEventKind, matchID: UUID? = nil, id: UUID = UUID(),
          duration: TimeInterval? = nil, x: Double? = nil, y: Double? = nil, vx: Double? = nil, vy: Double? = nil,
-         actorID: UUID? = nil, scores: [String: Int]? = nil, remaining: TimeInterval? = nil) {
+         actorID: UUID? = nil, scores: [String: Int]? = nil, remaining: TimeInterval? = nil,
+         possession: Double? = nil) {
         version = Self.protocolVersion
         self.id = id
         senderID = GameIdentity.localID
@@ -73,6 +75,7 @@ struct MatchMessage: Codable {
         self.actorID = actorID
         self.scores = scores
         self.remaining = remaining
+        self.possession = possession
     }
 }
 

@@ -41,6 +41,7 @@ final class MatchCoordinator {
     private var rightFallenUntil: TimeInterval = 0
     private var lastKickAt: TimeInterval = 0
     private var lastTackleAt: TimeInterval = 0
+    private var lastTurnAt: TimeInterval = 0
     private var seenMessageIDs = Set<UUID>()
     private var roomPeerEndpoint: NWEndpoint?
 
@@ -51,6 +52,7 @@ final class MatchCoordinator {
         arena.onKick = { [weak self] position, direction in self?.kick(from: position, direction: direction) }
         arena.onTackle = { [weak self] position, direction in self?.tackle(from: position, direction: direction) }
         arena.onPowerShot = { [weak self] position in self?.powerShot(from: position) }
+        arena.onMarseille = { [weak self] in self?.marseille() }
         arena.onPauseToggle = { [weak self] in self?.togglePause() }
         arena.onResume = { [weak self] in self?.resume() }
         arena.onEnd = { [weak self] in self?.end() }
@@ -160,6 +162,15 @@ final class MatchCoordinator {
             } else if message.sentAt >= latestKickoffAt, let actor = message.actorID {
                 beginPowerVisual(side: actor == GameIdentity.localID ? .right : .left)
             }
+        case .marseille:
+            guard message.matchID == matchID, pausedAt == nil else { return }
+            if isHost {
+                guard message.actorID == nil,
+                      ProcessInfo.processInfo.systemUptime - remoteSeenAt < 1 else { return }
+                beginMarseille(side: .right, actorID: message.senderID)
+            } else if message.sentAt >= latestKickoffAt, let actor = message.actorID {
+                arena.startMarseille(local: actor == GameIdentity.localID)
+            }
         case .pause:
             guard message.matchID == matchID, message.sentAt > latestRemoteControlAt else { return }
             latestRemoteControlAt = message.sentAt
@@ -175,7 +186,8 @@ final class MatchCoordinator {
                   (0...1).contains(x), (0...1).contains(y), abs(vx) <= 3, abs(vy) <= 3,
                   message.sentAt > latestBallAt else { return }
             latestBallAt = message.sentAt
-            ball = ArenaBall(x: x, y: y, vx: vx, vy: vy)
+            ball = ArenaBall(x: x, y: y, vx: vx, vy: vy,
+                             carrier: side(from: message.possession))
         case .sync:
             guard !isHost, message.matchID == matchID, let scores = message.scores,
                   let left = scores["left"], let right = scores["right"],
@@ -233,6 +245,7 @@ final class MatchCoordinator {
         rightFallenUntil = 0
         lastKickAt = 0
         lastTackleAt = 0
+        lastTurnAt = 0
         arena.show(homeSide: host ? .left : .right)
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -288,23 +301,19 @@ final class MatchCoordinator {
         }
         if isHost {
             if now >= kickoffAt && powerActorSide == nil {
+                if let carrier = ball.carrier {
+                    let position = carrier == .left ? arena.localPosition : remotePlayer
+                    let direction = carrier == .left ? arena.localDirection : remoteDirection
+                    ArenaPhysics.carry(&ball, beside: position, direction: direction,
+                                       turnProgress: arena.marseilleProgress(side: carrier))
+                }
                 switch ArenaPhysics.step(&ball, dt: dt) {
                 case .inPlay:
-                    if kickoffOwner == nil || kickoffOwner == .left {
-                        if ArenaPhysics.contact(&ball, player: arena.localPosition,
-                                                direction: arena.localDirection),
-                           kickoffOwner == .left {
-                            kickoffOwner = nil
-                            sendScore(goal: false)
-                        }
-                    }
-                    if now - remoteSeenAt < 1 && (kickoffOwner == nil || kickoffOwner == .right) {
-                        if ArenaPhysics.contact(&ball, player: remotePlayer,
-                                                direction: remoteDirection),
-                           kickoffOwner == .right {
-                            kickoffOwner = nil
-                            sendScore(goal: false)
-                        }
+                    acquireOrBounce(side: .left, position: arena.localPosition,
+                                    direction: arena.localDirection)
+                    if now - remoteSeenAt < 1 {
+                        acquireOrBounce(side: .right, position: remotePlayer,
+                                        direction: remoteDirection)
                     }
                 case .goalAtLeft: rightScore += 1; scored(at: now, conceding: .left)
                 case .goalAtRight: leftScore += 1; scored(at: now, conceding: .right)
@@ -313,16 +322,36 @@ final class MatchCoordinator {
             if now - lastBallSentAt >= 0.10 {
                 lastBallSentAt = now
                 send(MatchMessage(kind: .ball, matchID: id, x: ball.x, y: ball.y,
-                                  vx: ball.vx, vy: ball.vy))
+                                  vx: ball.vx, vy: ball.vy,
+                                  possession: ball.carrier.map { $0 == .left ? 0 : 1 } ?? 2))
             }
             if now - lastSyncSentAt >= 0.5 {
                 lastSyncSentAt = now
                 sendScore(goal: false)
             }
         } else if now >= kickoffAt && powerActorSide == nil {
+            if let carrier = ball.carrier {
+                let localSide: FieldEdge = isHost ? .left : .right
+                let position = carrier == localSide ? arena.localPosition : arena.remotePosition
+                let direction = carrier == localSide ? arena.localDirection : remoteDirection
+                ArenaPhysics.carry(&ball, beside: position, direction: direction,
+                                   turnProgress: arena.marseilleProgress(side: carrier))
+            }
             _ = ArenaPhysics.step(&ball, dt: dt) // Visual prediction between host snapshots.
         }
         render()
+    }
+
+    private func acquireOrBounce(side: FieldEdge, position: CGPoint, direction: CGPoint) {
+        guard ball.carrier == nil,
+              ArenaPhysics.mayTakeKickoff(owner: kickoffOwner, player: side),
+              ProcessInfo.processInfo.systemUptime >= (side == .left ? leftFallenUntil : rightFallenUntil) else { return }
+        if ArenaPhysics.capture(&ball, by: side, player: position) {
+            ArenaPhysics.carry(&ball, beside: position, direction: direction)
+            if kickoffOwner != nil { kickoffOwner = nil; sendScore(goal: false) }
+        } else if hypot(ball.vx, ball.vy) >= 0.7 {
+            _ = ArenaPhysics.contact(&ball, player: position, direction: direction)
+        }
     }
 
     private func scored(at now: TimeInterval, conceding side: FieldEdge) {
@@ -403,10 +432,14 @@ final class MatchCoordinator {
         guard canAct(side: side), kickoffOwner == nil,
               now - lastTackleAt > 0.85 else { return false }
         lastTackleAt = now
-        _ = ArenaPhysics.tackle(&ball, from: position, direction: direction)
+        let wasCarriedByOpponent = ball.carrier == (side == .left ? FieldEdge.right : .left)
+        let isOpponentTurning = arena.marseilleProgress(side: side == .left ? .right : .left) != nil
+        if !wasCarriedByOpponent || !isOpponentTurning {
+            _ = ArenaPhysics.tackle(&ball, from: position, direction: direction)
+        }
         let victim: FieldEdge = side == .left ? .right : .left
         let target = victim == .left ? arena.localPosition : remotePlayer
-        if now - remoteSeenAt < 1,
+        if !isOpponentTurning, now - remoteSeenAt < 1,
            hypot(position.x - target.x, position.y - target.y) < 0.08 {
             applyFall(to: victim, notifyPeer: true)
         }
@@ -424,6 +457,7 @@ final class MatchCoordinator {
         }
         if victim == (isHost ? .left : .right) { arena.stun() }
         else { arena.stunRemote() }
+        if ball.carrier == victim { ArenaPhysics.dispossess(&ball, direction: CGPoint(x: victim == .left ? 1 : -1, y: 0)) }
         if notifyPeer, let id = matchID {
             send(MatchMessage(kind: .fall, matchID: id, x: victim == .left ? 0 : 1))
         }
@@ -432,6 +466,7 @@ final class MatchCoordinator {
     private func canAct(side: FieldEdge) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         return pausedAt == nil && now >= kickoffAt && powerActorSide == nil &&
+            arena.marseilleProgress(side: side) == nil &&
             now >= (side == .left ? leftFallenUntil : rightFallenUntil)
     }
 
@@ -439,6 +474,27 @@ final class MatchCoordinator {
         if value == 0 { return .left }
         if value == 1 { return .right }
         return nil
+    }
+
+    private func marseille() {
+        guard let id = matchID else { return }
+        let side: FieldEdge = isHost ? .left : .right
+        guard canAct(side: side) else { return }
+        guard ball.carrier == side else {
+            arena.showFeedback("공을 소유해야 마르세유턴을 할 수 있어요")
+            return
+        }
+        if isHost { beginMarseille(side: side, actorID: GameIdentity.localID) }
+        else { send(MatchMessage(kind: .marseille, matchID: id)) }
+    }
+
+    private func beginMarseille(side: FieldEdge, actorID: UUID) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard isHost, let id = matchID, canAct(side: side), ball.carrier == side,
+              now - lastTurnAt > 1.5 else { return }
+        lastTurnAt = now
+        arena.startMarseille(local: side == .left)
+        send(MatchMessage(kind: .marseille, matchID: id, actorID: actorID))
     }
 
     private func powerShot(from position: CGPoint) {
@@ -508,6 +564,7 @@ final class MatchCoordinator {
         if lastKickAt > 0 { lastKickAt += elapsed }
         if lastTackleAt > 0 { lastTackleAt += elapsed }
         if lastPowerAt > 0 { lastPowerAt += elapsed }
+        if lastTurnAt > 0 { lastTurnAt += elapsed }
         lastTick = ProcessInfo.processInfo.systemUptime
         lastSyncSentAt = 0
         arena.setPaused(false, elapsed: elapsed)
