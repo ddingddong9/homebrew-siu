@@ -26,7 +26,7 @@ if [[ "$lan_port" != <-> || "$lan_port" -lt 1 || "$lan_port" -gt 65535 ]]; then
   exit 2
 fi
 
-for command_name in cmake ninja git tar ditto perl; do
+for command_name in cmake ninja git tar ditto perl sips iconutil plutil; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     print -u2 "Missing dependency: $command_name"
     exit 2
@@ -76,8 +76,11 @@ if [[ -n "$lan_role" ]]; then
   print '"siu_lan_port" "'"$lan_port"'"' >> "$build_dir/football.config"
 fi
 
+app_path="$("$repo_root/Scripts/package-gameplayfootball-dev-app.sh" "$build_dir")"
+
 print "GameplayFootball built at: $build_dir/gameplayfootball"
+print "Application: $app_path"
 print "Build log: $stage/build.log"
 if $run_game; then
-  (cd "$build_dir" && ./gameplayfootball)
+  open "$app_path"
 fi

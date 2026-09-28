@@ -4,9 +4,11 @@
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleExecutable</key><string>launch-gameplayfootball</string>
+  <key>CFBundleIconFile</key><string>siu.icns</string>
   <key>CFBundleIdentifier</key><string>io.siu.gameplayfootball.dev</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-  <key>CFBundleName</key><string>GameplayFootball Dev</string>
+  <key>CFBundleDisplayName</key><string>SIU Football</string>
+  <key>CFBundleName</key><string>SIU Football</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>

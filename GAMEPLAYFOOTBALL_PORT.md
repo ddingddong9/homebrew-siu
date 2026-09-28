@@ -6,7 +6,7 @@
 
 Apple Silicon Mac에서 Xcode Command Line Tools와 Homebrew가 필요하다. 테스트에 사용한 의존성은 CMake, Ninja, SDL2 호환 라이브러리, SDL2_image, SDL2_ttf, SDL2_gfx, Boost, OpenAL, SQLite다.
 
-친구가 **현재 Git 브랜치를 받아 자기 Mac에서 빌드**한다면 Command Line Tools가 필요하다(`xcode-select --install`). 전체 Xcode 앱은 필요하지 않다. 현재 `GameplayFootballDev.app`은 Homebrew 동적 라이브러리를 함께 넣지 않은 개발용 묶음이어서, 앱 폴더만 복사해 설치하는 방식도 아직 지원하지 않는다. 추후 의존성을 포함한 배포용 앱을 만들면 친구 Mac에서 컴파일할 필요가 없어 Command Line Tools 요구를 없앨 수 있다.
+친구가 **현재 Git 브랜치를 받아 자기 Mac에서 빌드**한다면 Command Line Tools가 필요하다(`xcode-select --install`). 전체 Xcode 앱은 필요하지 않다. 빌드가 끝나면 결과 폴더에 기존 SIU 아이콘을 쓴 `SIU Football.app`을 자동 생성한다. 이 앱은 Homebrew 동적 라이브러리를 함께 넣지 않은 개발용 묶음이므로, 앱 폴더만 복사해 설치하는 방식은 아직 지원하지 않는다. 추후 의존성을 포함한 배포용 앱을 만들면 친구 Mac에서 컴파일할 필요가 없어 Command Line Tools 요구를 없앨 수 있다.
 
 ```sh
 brew install cmake ninja sdl2-compat sdl2_image sdl2_ttf sdl2_gfx boost openal-soft
