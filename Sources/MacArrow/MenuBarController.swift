@@ -33,7 +33,7 @@ final class MenuBarController: NSObject {
     private let startItem = NSMenuItem(title: "1대1 경기 시작…", action: #selector(startMatch), keyEquivalent: "")
     private let endItem = NSMenuItem(title: "경기 종료", action: #selector(endMatch), keyEquivalent: "")
     private let previewItem = NSMenuItem(title: "경기장 미리보기 (AI 연습)", action: #selector(showPreview), keyEquivalent: "")
-    private let elevenPreviewItem = NSMenuItem(title: "11대11 3D 경기장 시제품", action: #selector(showElevenPreview), keyEquivalent: "")
+    private let elevenPreviewItem = NSMenuItem(title: "11대11 홈 · 방 만들기/참가", action: #selector(showElevenPreview), keyEquivalent: "")
 
     init(overlay: BallOverlayController, port: UInt16, transport: MatchTransport) {
         self.overlay = overlay
@@ -358,7 +358,7 @@ final class MenuBarController: NSObject {
         preview?.show()
     }
 
-    @objc private func showElevenPreview() {
+    @objc func showElevenPreview() {
         preview?.stop()
         player?.hide()
         playerMenuItem.title = "연습용 선수 생성"

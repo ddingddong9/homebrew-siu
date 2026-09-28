@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>siu</string>
+    <key>CFBundleIdentifier</key><string>com.ddingddong9.siu.eleven-preview</string>
+    <key>CFBundleName</key><string>SIU Eleven Preview</string>
+    <key>CFBundleDisplayName</key><string>SIU Eleven Preview</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>13.0</string>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>SIULaunchMode</key><string>eleven-preview</string>
+    <key>NSLocalNetworkUsageDescription</key><string>같은 와이파이에 있는 친구의 SIU 방을 찾고 11대11 경기를 연결합니다.</string>
+    <key>NSBonjourServices</key><array><string>_siu-eleven._tcp</string><string>_siu-match._udp</string></array>
+</dict>
+</plist>

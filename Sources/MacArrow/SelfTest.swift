@@ -167,46 +167,7 @@ enum SelfTest {
         check(ArenaPhysics.mayTakeKickoff(owner: .right, player: .right) &&
               !ArenaPhysics.mayTakeKickoff(owner: .right, player: .left),
               "loser-only kickoff")
-        var eleven = ElevenMatchEngine(duration: 20, aiEnabled: false)
-        check(eleven.players.count == 22 &&
-              eleven.players.filter({ $0.side == .left }).count == 11 &&
-              eleven.players.filter({ $0.side == .right }).count == 11,
-              "11-a-side player and team count")
-        check(eleven.players.filter({ $0.goalkeeper }).count == 2,
-              "11-a-side goalkeepers")
-        for _ in 0..<90 { eleven.step(input: ElevenInput(), dt: 1.0 / 60) }
-        check(eleven.ball.carrier == .left && eleven.selectedID == 9,
-              "11-a-side opening possession")
-        let openingSelection = eleven.selectedID
-        eleven.switchPlayer()
-        check(eleven.selectedID != openingSelection && eleven.selected.side == .left,
-              "11-a-side player switching")
-        var passing = ElevenMatchEngine(duration: 20, aiEnabled: false)
-        for _ in 0..<90 { passing.step(input: ElevenInput(), dt: 1.0 / 60) }
-        passing.pass()
-        check(passing.ball.carrier == nil && hypot(passing.ball.vx, passing.ball.vy) > 0.1,
-              "11-a-side passing")
-        var feinting = ElevenMatchEngine(duration: 20, aiEnabled: false)
-        for _ in 0..<90 { feinting.step(input: ElevenInput(), dt: 1.0 / 60) }
-        let startingY = feinting.selected.y
-        feinting.feint()
-        check(feinting.selected.y > startingY && feinting.ball.carrier == .left &&
-              feinting.selected.feintFor > 0, "11-a-side body feint")
-        let firstFeintY = feinting.selected.y
-        feinting.feint()
-        check(feinting.selected.y == firstFeintY, "11-a-side feint cooldown")
-        var goalRun = ElevenMatchEngine(duration: 20, aiEnabled: false)
-        for _ in 0..<90 { goalRun.step(input: ElevenInput(), dt: 1.0 / 60) }
-        for _ in 0..<400 where goalRun.leftScore == 0 {
-            goalRun.step(input: ElevenInput(horizontal: 1, sprint: true), dt: 1.0 / 60)
-        }
-        check(goalRun.leftScore == 1 && goalRun.rightScore == 0 &&
-              goalRun.ball.carrier == nil && goalRun.kickoffFor > 0,
-              "11-a-side goal and conceding-team restart")
-        goalRun.togglePause()
-        let pausedTime = goalRun.remaining
-        goalRun.step(input: ElevenInput(horizontal: 1), dt: 1)
-        check(goalRun.remaining == pausedTime, "11-a-side pause freezes clock")
+        failures += ElevenSelfTests.run()
         var power = ArenaBall(x: 0.6, y: 0.7)
         check(ArenaPhysics.powerKick(&power, from: CGPoint(x: 0.62, y: 0.7), toward: .left) &&
               power.vx < -1 && power.vy < 0 && hypot(power.vx, power.vy) > 2,
