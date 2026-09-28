@@ -74,25 +74,44 @@ enum ArenaPhysics {
     }
 
     static func kick(_ ball: inout ArenaBall, from player: CGPoint, direction: CGPoint,
-                     power: Double = 1) -> Bool {
+                     power: Double = 1, aimToward goal: FieldEdge? = nil) -> Bool {
         guard ball.z < 0.03, hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
         let length = hypot(direction.x, direction.y)
         guard length > 0.01 else { return false }
         let speed = 1.1 * min(max(power, 0.2), 1.5)
-        ball.vx = direction.x / length * speed
-        ball.vy = direction.y / length * speed
+        let inputX = direction.x / length
+        let inputY = direction.y / length
+        let target = goal.map { goalDirection(for: ball, toward: $0) }
+        let weight = target == nil ? 0 : 0.28
+        let aimedX = inputX * (1 - weight) + (target?.x ?? 0) * weight
+        let aimedY = inputY * (1 - weight) + (target?.y ?? 0) * weight
+        let aimedLength = hypot(aimedX, aimedY)
+        ball.vx = aimedX / aimedLength * speed
+        ball.vy = aimedY / aimedLength * speed
         ball.carrier = nil
         ball.z = 0; ball.vz = 0; ball.curve = 0; ball.recatchDelay = 0.18
         return true
     }
 
     static func curveKick(_ ball: inout ArenaBall, from player: CGPoint,
-                          direction: CGPoint) -> Bool {
-        guard kick(&ball, from: player, direction: direction) else { return false }
-        let inward = ball.y < 0.5 ? 1.0 : -1.0
-        ball.curve = inward * (direction.x >= 0 ? 1 : -1) * 1.8
+                          direction: CGPoint, toward goal: FieldEdge) -> Bool {
+        let target = goalDirection(for: ball, toward: goal)
+        let inward = ball.y < 0.5 ? 1.0 : (ball.y > 0.5 ? -1.0 : (direction.y >= 0 ? 1.0 : -1.0))
+        let bend = inward * (goal == .right ? 1.0 : -1.0)
+        let targetAngle = atan2(target.y, target.x)
+        let launchAngle = targetAngle - bend * 0.16
+        guard kick(&ball, from: player,
+                   direction: CGPoint(x: cos(launchAngle), y: sin(launchAngle))) else { return false }
+        ball.curve = bend * 1.2
         ball.recatchDelay = 0.28
         return true
+    }
+
+    private static func goalDirection(for ball: ArenaBall, toward goal: FieldEdge) -> CGPoint {
+        let dx = (goal == .right ? 0.98 : 0.02) - ball.x
+        let dy = 0.5 - ball.y
+        let length = max(hypot(dx, dy), 0.001)
+        return CGPoint(x: dx / length, y: dy / length)
     }
 
     static func rainbow(_ ball: inout ArenaBall, from player: CGPoint,
