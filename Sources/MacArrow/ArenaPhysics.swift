@@ -5,6 +5,7 @@ struct ArenaBall {
     var y: Double = 0.5
     var vx: Double = 0
     var vy: Double = 0
+    var carrier: FieldEdge?
 
     static let kickoff = ArenaBall()
 }
@@ -26,11 +27,13 @@ enum ArenaPhysics {
 
     static func step(_ ball: inout ArenaBall, dt rawDelta: TimeInterval) -> ArenaStepResult {
         let dt = min(max(rawDelta, 0), 0.05)
-        ball.x += ball.vx * dt
-        ball.y += ball.vy * dt
-        let drag = pow(0.985, dt * 60)
-        ball.vx *= drag
-        ball.vy *= drag
+        if ball.carrier == nil {
+            ball.x += ball.vx * dt
+            ball.y += ball.vy * dt
+            let drag = pow(0.985, dt * 60)
+            ball.vx *= drag
+            ball.vy *= drag
+        }
 
         if ball.y < 0.08 {
             ball.y = 0.08
@@ -60,6 +63,7 @@ enum ArenaPhysics {
         let speed = 1.1 * min(max(power, 0.2), 1.5)
         ball.vx = direction.x / length * speed
         ball.vy = direction.y / length * speed
+        ball.carrier = nil
         return true
     }
 
@@ -77,7 +81,33 @@ enum ArenaPhysics {
         guard length > 0.01 else { return false }
         ball.vx = dx / length * 2.2
         ball.vy = dy / length * 2.2
+        ball.carrier = nil
         return true
+    }
+
+    static func capture(_ ball: inout ArenaBall, by side: FieldEdge, player: CGPoint) -> Bool {
+        guard ball.carrier == nil, hypot(ball.vx, ball.vy) < 0.7,
+              hypot(ball.x - player.x, ball.y - player.y) < 0.064 else { return false }
+        ball.carrier = side
+        ball.vx = 0
+        ball.vy = 0
+        return true
+    }
+
+    static func carry(_ ball: inout ArenaBall, beside player: CGPoint, direction: CGPoint,
+                      turnProgress: Double? = nil) {
+        guard ball.carrier != nil else { return }
+        let angle = atan2(direction.y, direction.x) + (turnProgress.map { 2 * .pi * $0 } ?? 0)
+        ball.x = min(max(player.x + cos(angle) * 0.046 - sin(angle) * 0.012, 0.04), 0.98)
+        ball.y = min(max(player.y + sin(angle) * 0.046 + cos(angle) * 0.012, 0.08), 0.92)
+        ball.vx = 0
+        ball.vy = 0
+    }
+
+    static func dispossess(_ ball: inout ArenaBall, direction: CGPoint) {
+        ball.carrier = nil
+        ball.vx = direction.x * 0.28
+        ball.vy = direction.y * 0.28
     }
 
     @discardableResult
