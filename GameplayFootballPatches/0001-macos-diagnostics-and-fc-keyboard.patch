@@ -1,0 +1,84 @@
+diff --git a/src/gamedefines.hpp b/src/gamedefines.hpp
+--- a/src/gamedefines.hpp
++++ b/src/gamedefines.hpp
+@@ -76,3 +76,5 @@
+ 
+-const SDL_Keycode defaultKeyIDs[18] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT, SDLK_w, SDLK_a, SDLK_s, SDLK_d, SDLK_w, SDLK_a, SDLK_s, SDLK_d, SDLK_q, SDLK_z, SDLK_e, SDLK_c, SDLK_F1, SDLK_RETURN };
++// FC Online tactical defending: Q switches, S pressures, Z calls a teammate.
++// Attack remains W/A/S/D; the current engine does not implement every FC action.
++const SDL_Keycode defaultKeyIDs[18] = { SDLK_UP, SDLK_RIGHT, SDLK_DOWN, SDLK_LEFT, SDLK_w, SDLK_a, SDLK_s, SDLK_d, SDLK_w, SDLK_a, SDLK_s, SDLK_z, SDLK_q, SDLK_z, SDLK_e, SDLK_c, SDLK_F1, SDLK_RETURN };
+ 
+diff --git a/src/hid/keyboard.cpp b/src/hid/keyboard.cpp
+--- a/src/hid/keyboard.cpp
++++ b/src/hid/keyboard.cpp
+@@ -28,3 +28,10 @@ void HIDKeyboard::LoadConfig() {
+     functionMapping[i] = (SDL_Keycode)GetConfiguration()->GetInt(("input_keyboard_" + int_to_str(i)).c_str(), (SDL_Keycode)defaultKeyIDs[i]);
+   }
++  // The two official FC Online defensive presets use different meanings for
++  // S/Q/D. Keep attack mappings intact and only override defensive actions.
++  if (GetConfiguration()->Get("siu_defense_mode", "tactical") == "basic") {
++    functionMapping[e_ButtonFunction_Switch] = SDLK_s;
++    functionMapping[e_ButtonFunction_Pressure] = SDLK_d;
++    functionMapping[e_ButtonFunction_TeamPressure] = SDLK_q;
++  }
+ }
+diff --git a/src/managers/usereventmanager.cpp b/src/managers/usereventmanager.cpp
+--- a/src/managers/usereventmanager.cpp
++++ b/src/managers/usereventmanager.cpp
+@@ -83,6 +83,12 @@ void UserEventManager::InputSDLEvent(const SDL_Event &event) {
+         keyPressed.erase(event.key.keysym.sym);
+         keyPressedMutex.unlock();
+         break;
++      case SDL_WINDOWEVENT:
++        if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
++          boost::mutex::scoped_lock lock(keyPressedMutex);
++          keyPressed.clear();
++        }
++        break;
+       case SDL_MOUSEBUTTONDOWN:
+         mousePressedMutex.lock();
+         mousePressed[event.button.button] = true;
+diff --git a/src/systems/graphics/rendering/opengl_renderer3d.cpp b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+--- a/src/systems/graphics/rendering/opengl_renderer3d.cpp
++++ b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+@@ -351,5 +351,8 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullscreen) {
+ //#ifdef WIN32
+     // SDL subsystems must be initialized before setting attributes
+-    SDL_Init(SDL_INIT_VIDEO);
++    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
++      Log(e_FatalError, "OpenGLRenderer3D", "CreateContext", "SDL video initialization failed: " + std::string(SDL_GetError()));
++      return false;
++    }
+ 
+     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+@@ -382,7 +385,15 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullscreen) {
+                                 SDL_WINDOWPOS_UNDEFINED, width, height,
+                                 SDL_WINDOW_OPENGL /* | SDL_RESIZABLE*/ |
+                                 (fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
++    if (!window) {
++      Log(e_FatalError, "OpenGLRenderer3D", "CreateContext", "SDL window creation failed: " + std::string(SDL_GetError()));
++      return false;
++    }
+     context = SDL_GL_CreateContext(window);
++    if (!context) {
++      Log(e_FatalError, "OpenGLRenderer3D", "CreateContext", "OpenGL context creation failed: " + std::string(SDL_GetError()));
++      return false;
++    }
+ 
+ 
+     //    *reinterpret_cast<void**>(&(mapping.func)) =
+@@ -410,9 +421,4 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullscreen) {
+     mapping.glGetIntegerv(GL_MINOR_VERSION, &glVersion[1]);
+ 
+     Log(e_Notice, "OpenGLRenderer3D", "CreateContext", "OpenGL major/minor " + int_to_str(glVersion[0]) + "." + int_to_str(glVersion[1]));
+-    if (!context) {
+-      std::string errorString = SDL_GetError();
+-      Log(e_FatalError, "OpenGLRenderer3D", "CreateContext", "Failed on SDL error: " + errorString);
+-      return false;
+-    }
+     bool higherThan32 = false;
+@@ -2298,3 +2304,3 @@ void OpenGLRenderer3D::operator()() {
+-        if (contextIsActive) { // context must be active
++        if (contextIsActive || event.type == SDL_WINDOWEVENT) { // always deliver focus loss to clear held keys
+           UserEventManager::GetInstance().InputSDLEvent(event);
+         }

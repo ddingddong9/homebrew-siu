@@ -1,0 +1,21 @@
+diff --git a/src/main.cpp b/src/main.cpp
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -33,5 +33,6 @@
+ #include "utils/orbitcamera.hpp"
+ 
+ #include "SDL2/SDL_ttf.h"
++#include "SDL2/SDL.h"
+ 
+ #if defined(WIN32) && defined(__MINGW32__)
+@@ -274,5 +275,10 @@ int main(int argc, const char** argv) {
+   config = new Properties();
+   if (argc > 1) configFile = argv[1];
+   config->LoadFile(configFile.c_str());
+ 
++  // Cocoa/SDL video initialization must happen on the macOS main thread.
++  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
++    fprintf(stderr, "SDL video initialization failed: %s\n", SDL_GetError());
++    return 1;
++  }
+   Initialize(*config);

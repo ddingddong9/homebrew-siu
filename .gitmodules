@@ -1,0 +1,3 @@
+[submodule "Vendor/GameplayFootball"]
+	path = Vendor/GameplayFootball
+	url = https://github.com/vi3itor/GameplayFootball.git

@@ -1,0 +1,116 @@
+diff --git a/src/main.cpp b/src/main.cpp
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -273,15 +273,10 @@
+-int main(int argc, const char** argv) {
++static int RunGame(int argc, const char** argv) {
+ 
+   config = new Properties();
+   if (argc > 1) configFile = argv[1];
+   config->LoadFile(configFile.c_str());
+ 
+-  // Cocoa/SDL video initialization must happen on the macOS main thread.
+-  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+-    fprintf(stderr, "SDL video initialization failed: %s\n", SDL_GetError());
+-    return 1;
+-  }
+   Initialize(*config);
+ 
+   srand(time(NULL));
+@@ -517,4 +512,28 @@
+ 
+   return 0;
+ }
+ 
++int main(int argc, const char** argv) {
++#ifdef __APPLE__
++  // Cocoa requires SDL video, window creation and event pumping on this thread.
++  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
++    fprintf(stderr, "SDL video initialization failed: %s\n", SDL_GetError());
++    return 1;
++  }
++
++  int gameResult = 1;
++  boost::thread gameThread([&]() {
++    gameResult = RunGame(argc, argv);
++  });
++
++  blunted::Renderer3D *renderer = blunted::WaitForMainThreadRenderer();
++  (*renderer)();
++  blunted::NotifyMainThreadRendererStopped();
++  gameThread.join();
++  SDL_Quit();
++  return gameResult;
++#else
++  return RunGame(argc, argv);
++#endif
++}
+diff --git a/src/systems/graphics/graphics_system.hpp b/src/systems/graphics/graphics_system.hpp
+--- a/src/systems/graphics/graphics_system.hpp
++++ b/src/systems/graphics/graphics_system.hpp
+@@ -23,7 +23,12 @@ namespace blunted {
+ 
+   class Renderer3D;
+ 
++#ifdef __APPLE__
++  Renderer3D *WaitForMainThreadRenderer();
++  void NotifyMainThreadRendererStopped();
++#endif
++
+   class GraphicsSystem : public ISystem {
+ 
+diff --git a/src/systems/graphics/graphics_system.cpp b/src/systems/graphics/graphics_system.cpp
+--- a/src/systems/graphics/graphics_system.cpp
++++ b/src/systems/graphics/graphics_system.cpp
+@@ -16,6 +16,30 @@ namespace blunted {
+ 
++#ifdef __APPLE__
++  static boost::mutex rendererMainMutex;
++  static boost::condition_variable rendererMainCondition;
++  static Renderer3D *rendererForMain = NULL;
++  static bool rendererMainStopped = false;
++
++  Renderer3D *WaitForMainThreadRenderer() {
++    boost::unique_lock<boost::mutex> lock(rendererMainMutex);
++    while (!rendererForMain) rendererMainCondition.wait(lock);
++    return rendererForMain;
++  }
++
++  void NotifyMainThreadRendererStopped() {
++    boost::unique_lock<boost::mutex> lock(rendererMainMutex);
++    rendererMainStopped = true;
++    rendererMainCondition.notify_all();
++  }
++#endif
++
+   GraphicsSystem::GraphicsSystem() : systemType(e_SystemType_Graphics) {
+     renderer3DTask = NULL;
+     task = NULL;
+@@ -36,7 +60,13 @@ void GraphicsSystem::Initialize(const Properties &config) {
+     height = config.GetInt("context_y", 720);
+     bpp = config.GetInt("context_bpp", 32);
+     bool fullscreen = config.GetBool("context_fullscreen", false);
++#ifdef __APPLE__
++    {
++      boost::unique_lock<boost::mutex> lock(rendererMainMutex);
++      rendererForMain = renderer3DTask;
++      rendererMainCondition.notify_all();
++    }
++#else
+     renderer3DTask->Run();
++#endif
+ 
+     boost::intrusive_ptr<Renderer3DMessage_CreateContext> createContext(new Renderer3DMessage_CreateContext(width, height, bpp, fullscreen));
+@@ -70,7 +100,13 @@ void GraphicsSystem::Exit() {
+     renderer3DTask->messageQueue.PushMessage(R3Dshutdown);
+     R3Dshutdown->Wait();
+ 
++#ifdef __APPLE__
++    {
++      boost::unique_lock<boost::mutex> lock(rendererMainMutex);
++      while (!rendererMainStopped) rendererMainCondition.wait(lock);
++    }
++#else
+     renderer3DTask->Join();
++#endif
+     delete renderer3DTask;

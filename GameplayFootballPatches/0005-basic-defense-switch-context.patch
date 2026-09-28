@@ -1,0 +1,12 @@
+diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
+--- a/src/onthepitch/team.cpp
++++ b/src/onthepitch/team.cpp
+@@ -366,7 +366,9 @@ void Team::Process() {
+         selectedPlayer = GetPlayer(selectedPlayerID);
+         assert(selectedPlayer);
+ 
+         if (humanGamers.at(i)->GetHIDevice()->GetButton(e_ButtonFunction_Switch) &&
+             !humanGamers.at(i)->GetHIDevice()->GetPreviousButtonState(e_ButtonFunction_Switch) &&
++            // In basic defense S switches players, but in attack S passes.
++            (GetConfiguration()->Get("siu_defense_mode", "tactical") != "basic" || match->GetBestPossessionTeamID() != GetID()) &&
+             // don't switch if we are both best AND designated possession player. unless opponent team has ball.

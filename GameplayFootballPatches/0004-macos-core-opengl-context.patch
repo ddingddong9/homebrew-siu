@@ -1,0 +1,12 @@
+diff --git a/src/systems/graphics/rendering/opengl_renderer3d.cpp b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+--- a/src/systems/graphics/rendering/opengl_renderer3d.cpp
++++ b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+@@ -367,5 +367,5 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullscreen) {
+ 
+-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+-    //SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+ 
