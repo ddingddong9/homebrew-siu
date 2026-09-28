@@ -1,10 +1,10 @@
 cask "siu-app-beta" do
-  version "1.11.0-beta.2"
-  sha256 "a29946ee24df05907b9b906958498193cc04fae0b56b9dce83d12425a2f13093"
+  version "1.12.0-beta.1"
+  sha256 "4f68f285cecddce49378c3268a5ec42da437b2689d061804a310386dfb4058c8"
 
   url "https://github.com/ddingddong9/homebrew-siu/releases/download/v#{version}/siu-v#{version}-macos-app.zip"
   name "SIU"
-  desc "Two-player football game on a shared pitch"
+  desc "LAN football with two-player 11-a-side teams and a shared 3D pitch"
   homepage "https://github.com/ddingddong9/homebrew-siu"
 
   depends_on macos: :ventura

@@ -19,9 +19,11 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.11.0</string>
+    <string>1.12.0</string>
     <key>SIUReleaseVersion</key>
-    <string>1.11.0-beta.2</string>
+    <string>1.12.0-beta.1</string>
+    <key>SIUShowElevenHome</key>
+    <true/>
     <key>CFBundleVersion</key>
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
@@ -29,10 +31,11 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>같은 와이파이에 있는 친구의 SIU 방을 찾고 1대1 경기를 연결합니다.</string>
+    <string>같은 와이파이에 있는 친구의 SIU 방을 찾고 축구 경기를 연결합니다.</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_siu-match._udp</string>
+        <string>_siu-eleven._tcp</string>
     </array>
 </dict>
 </plist>

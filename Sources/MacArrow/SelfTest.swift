@@ -167,6 +167,7 @@ enum SelfTest {
         check(ArenaPhysics.mayTakeKickoff(owner: .right, player: .right) &&
               !ArenaPhysics.mayTakeKickoff(owner: .right, player: .left),
               "loser-only kickoff")
+        failures += ElevenSelfTests.run()
         var power = ArenaBall(x: 0.6, y: 0.7)
         check(ArenaPhysics.powerKick(&power, from: CGPoint(x: 0.62, y: 0.7), toward: .left) &&
               power.vx < -1 && power.vy < 0 && hypot(power.vx, power.vy) > 2,

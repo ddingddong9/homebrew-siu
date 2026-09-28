@@ -10,6 +10,7 @@ final class MenuBarController: NSObject {
     private let match: MatchCoordinator
     private var player: PlayerWindowController?
     private var preview: ArenaPreviewController?
+    private var elevenPreview: ElevenMatchWindowController?
     private var layoutEditor: LayoutEditorWindowController?
     private var connectionTimer: Timer?
     private var updateTimer: Timer?
@@ -32,6 +33,7 @@ final class MenuBarController: NSObject {
     private let startItem = NSMenuItem(title: "1대1 경기 시작…", action: #selector(startMatch), keyEquivalent: "")
     private let endItem = NSMenuItem(title: "경기 종료", action: #selector(endMatch), keyEquivalent: "")
     private let previewItem = NSMenuItem(title: "경기장 미리보기 (AI 연습)", action: #selector(showPreview), keyEquivalent: "")
+    private let elevenPreviewItem = NSMenuItem(title: "11대11 홈 · 방 만들기/참가", action: #selector(showElevenPreview), keyEquivalent: "")
 
     init(overlay: BallOverlayController, port: UInt16, transport: MatchTransport) {
         self.overlay = overlay
@@ -48,6 +50,7 @@ final class MenuBarController: NSObject {
             self.startItem.isEnabled = !running
             self.endItem.isEnabled = running
             self.previewItem.isEnabled = !running
+            self.elevenPreviewItem.isEnabled = !running
             self.playerMenuItem.isEnabled = !running
             self.createRoomItem.isEnabled = !running
             self.joinRoomItem.isEnabled = !running
@@ -56,6 +59,7 @@ final class MenuBarController: NSObject {
                 self.player?.hide()
                 self.playerMenuItem.title = "연습용 선수 생성"
                 self.preview?.stop()
+                self.elevenPreview?.hide()
             }
             self.connectionItem.title = running ? "연결: 경기 중" : "연결: 경기 종료"
             self.connectionTimer?.invalidate()
@@ -138,6 +142,8 @@ final class MenuBarController: NSObject {
         menu.addItem(endItem)
         previewItem.target = self
         menu.addItem(previewItem)
+        elevenPreviewItem.target = self
+        menu.addItem(elevenPreviewItem)
         menu.addItem(NSMenuItem(title: "상대 연결·화면 배치…", action: #selector(openLayout), keyEquivalent: ","))
         menu.items.last?.target = self
         menu.addItem(NSMenuItem(title: "모든 축구공 지우기", action: #selector(clearBalls), keyEquivalent: "k"))
@@ -189,7 +195,8 @@ final class MenuBarController: NSObject {
         guard let update = availableUpdate else { return }
         let lastPrompted = UserDefaults.standard.string(forKey: "lastPromptedSIUUpdate")
         guard force || lastPrompted != update.version.raw else { return }
-        if match.isRunning || preview?.isRunning == true || NSApplication.shared.modalWindow != nil {
+        if match.isRunning || preview?.isRunning == true || elevenPreview?.isRunning == true ||
+            NSApplication.shared.modalWindow != nil {
             if !promptRetryScheduled {
                 promptRetryScheduled = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
@@ -344,10 +351,19 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func showPreview() {
+        elevenPreview?.hide()
         if preview == nil { preview = ArenaPreviewController() }
         player?.hide()
         playerMenuItem.title = "연습용 선수 생성"
         preview?.show()
+    }
+
+    @objc func showElevenPreview() {
+        preview?.stop()
+        player?.hide()
+        playerMenuItem.title = "연습용 선수 생성"
+        if elevenPreview == nil { elevenPreview = ElevenMatchWindowController() }
+        elevenPreview?.show()
     }
 
     private func checkPeers(showProgress: Bool = true, completion: @escaping (Bool) -> Void) {

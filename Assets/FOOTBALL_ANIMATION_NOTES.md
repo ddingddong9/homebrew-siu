@@ -1,0 +1,13 @@
+# Keeper and throw-in atlas
+
+Resource: `Sources/MacArrow/Resources/keeper-throw-atlas.png` (1448×1086, transparent PNG).
+
+Generated with the built-in image generation tool, not the fallback CLI. Existing `run-01.png` was used as a style/body reference. Runtime crops defined in `loadKeeperAndThrowSprites` preserve body scale; visiting keeper is recolored gold, visiting thrower blue. Existing running/kicking/sliding assets are unchanged. These are short sprite sequences, not motion-captured 3D animation.
+
+Final prompt:
+
+> Use case: photorealistic-natural. Asset: transparent sprite atlas for a football game. Image 1 is the existing football-player cutout STYLE reference. Create ONE atlas of exactly 12 isolated full-body athlete poses in a strict 4 columns by 3 rows equally sized square cell grid (overall 4:3 landscape). Clean genuine alpha transparent background, no lines, text, shadows, balls, logos, scenery. Same realistic athlete build, dark short hair, side-on facing RIGHT, same lighting and SAME body scale across all cells; wide dives must fit within their cell. Each pose centered in its cell; feet near bottom of cell when standing. Top row goalkeeper in GREEN long-sleeved shirt, black shorts and socks, white gloves: 1 ready crouched hands forward; 2 standing holding an invisible ball at chest with both gloves; 3 backswing one-arm underarm throw; 4 follow-through arm extended forward. Middle row same green goalkeeper: 1 crouching preparing to dive right; 2 full horizontal airborne diving to right arms reaching; 3 landed sideways stretched along ground reaching right; 4 recovering on one knee. Bottom row red shirt WHITE shorts BLACK socks player: 1 both hands together holding invisible ball in front of face; 2 both hands behind/above head preparing throw-in; 3 both hands extend above head releasing throw-in toward right; 4 arms forward follow-through. No footballs embedded: real-time game renders its own ball. Preserve photorealistic cutout feel of reference. All limbs inside individual cell and transparent gutters.
+
+Review: the generated dive spans more than one nominal grid cell, so explicit variable-width regions are used instead of a uniform grid. Short sequences and side-view-only new poses remain visual limitations. The user confirmed redistribution rights for the existing player source earlier in this project.
+
+Reference research: [soccer-course](https://github.com/nicolasbize/soccer-course) includes keeper states and pixel-art characters. Its art style differs from SIU's existing cutouts; no third-party animation was copied. [FC Online official controls](https://m.fconline.nexon.com/news/guide/view?n4ArticleSN=160) informed the contextual A/S/D layout, not proprietary engine implementation.

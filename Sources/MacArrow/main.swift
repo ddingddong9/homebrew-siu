@@ -16,6 +16,7 @@ private func usage() {
       siu layout
       siu check <hostname-or-ip> [--port 45678]
       siu demo [--y 0.0...1.0]
+      siu eleven-preview
       siu self-test
 
     Examples:
@@ -43,7 +44,8 @@ private func parsedY(_ arguments: [String]) -> Double {
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 let launchedAsApp = Bundle.main.bundleURL.pathExtension == "app"
-guard let command = arguments.first ?? (launchedAsApp ? "start" : nil) else {
+guard let command = arguments.first ?? (launchedAsApp ?
+    (Bundle.main.object(forInfoDictionaryKey: "SIULaunchMode") as? String ?? "start") : nil) else {
     usage()
     exit(0)
 }
@@ -129,6 +131,9 @@ case "start", "receive":
         }
         receiver.start()
         matchTransport.start()
+        if launchedAsApp && Bundle.main.object(forInfoDictionaryKey: "SIUShowElevenHome") as? Bool == true {
+            DispatchQueue.main.async { menuBar.showElevenPreview() }
+        }
         print("⚽️ SIU running. Football UDP \(port), match UDP \(port + 1). Use the ⚽️ menu bar icon.")
         withExtendedLifetime((receiver, matchTransport, menuBar)) { app.run() }
     } catch {
@@ -145,6 +150,13 @@ case "demo":
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { app.terminate(nil) }
     }
     app.run()
+
+case "eleven-preview":
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    let preview = MainActor.assumeIsolated { ElevenMatchWindowController() }
+    MainActor.assumeIsolated { preview.show() }
+    withExtendedLifetime(preview) { app.run() }
 
 case "setup":
     let app = NSApplication.shared
@@ -184,7 +196,8 @@ case "check":
     }
 
 case "self-test":
-    let failures = SelfTest.run() + SelfTest.runNetwork() + SelfTest.runPairSimulation()
+    let failures = SelfTest.run() + SelfTest.runNetwork() + SelfTest.runPairSimulation() +
+        MainActor.assumeIsolated { ElevenNetworkSelfTest.run() }
         + SelfTest.runWrongRoomSimulation() + SelfTest.runRoomJoinSimulation()
         + SelfTest.runBonjourRoomSimulation() + SelfTest.runRoomRejectionSimulation()
     if failures.isEmpty { print("Physics and match protocol self-test OK") }
@@ -206,7 +219,18 @@ case "asset-check":
             }
         }
     }
-    print("44 transparent character frames OK")
+    guard let blueURL = ResourceBundle.images.url(forResource: "blue-player", withExtension: "png"),
+          let blueBitmap = NSBitmapImageRep(data: try Data(contentsOf: blueURL)),
+          blueBitmap.hasAlpha else {
+        fputs("Missing or non-transparent blue team sprite.\n", stderr)
+        exit(1)
+    }
+    guard let atlas = ResourceBundle.images.url(forResource: "keeper-throw-atlas", withExtension: "png"),
+          let bitmap = NSBitmapImageRep(data: try Data(contentsOf: atlas)), bitmap.hasAlpha,
+          bitmap.pixelsWide == 1448, bitmap.pixelsHigh == 1086 else {
+        fputs("Missing or invalid keeper/throw-in atlas.\n", stderr); exit(1)
+    }
+    print("44 transparent character frames, blue team sprite and keeper/throw-in atlas OK")
 
 case "--help", "-h", "help":
     usage()
