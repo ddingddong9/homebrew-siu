@@ -1,6 +1,6 @@
 # GameplayFootball 개발 인수인계
 
-이 문서는 다른 Apple Silicon Mac에서 GameplayFootball 3D LAN 프로토타입을 이어서 개발하기 위한 최소 절차다. 기준 브랜치는 `codex/gameplayfootball-lan-plan`, 기준 커밋은 `c0415f8`이다.
+이 문서는 다른 Apple Silicon Mac에서 GameplayFootball 3D LAN 프로토타입을 이어서 개발하기 위한 최소 절차다. 기준 브랜치는 `codex/gameplayfootball-lan-plan`의 최신 커밋이다.
 
 이 브랜치의 `SIU Football.app`은 SIU 로비에서 GameplayFootball 경기 실행 파일을 연다. 기존 Swift 11대11 경기 엔진과는 별도다. 이 문서의 `--lan-host`/`--lan-join`은 로비를 거치지 않는 G2 개발용 직접 IPv4 시험이다.
 
@@ -27,6 +27,8 @@ open "dist/SIU Football.app"
 ```
 
 `SIU Football.app`은 SIU 로비를 첫 화면으로 열고, 빨강 방장·파랑 참가자 카드에서 방 생성/검색/승인 후 GameplayFootball 경기를 실행한다. **AI 상대 로컬 연습**도 같은 경기 실행 파일을 연다. 원본 GameplayFootball의 경기 전 로딩 그림은 표시하지 않는다. 기존 `Assets/icon/siu-cutout.png`를 아이콘으로 사용한다. 이 앱은 개발용이다. 실행 파일은 Homebrew의 동적 라이브러리를 사용하므로, 다른 Mac에 앱만 복사해서 실행할 수는 없다. 소스를 받은 Mac에서 위 의존성을 설치하고 다시 빌드해야 한다.
+
+별도의 `Scripts/package-gameplayfootball-test-app.py`는 macOS 26 Apple Silicon 시험용으로 Homebrew 라이브러리를 앱 내부에 포함한 ZIP을 만든다. 이 ZIP의 앱은 소스 빌드 없이 다른 Mac에 복사할 수 있지만, Apple 공증을 받지 않아 첫 실행 시 macOS의 **열기 허용** 절차가 필요할 수 있다. 다른 Mac에서의 실행은 아직 검증하지 않았다.
 
 ## SIU 로비 LAN 시험
 

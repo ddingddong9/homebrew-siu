@@ -8,7 +8,15 @@
 
 Apple Silicon Mac에서 Xcode Command Line Tools와 Homebrew가 필요하다. 테스트에 사용한 의존성은 CMake, Ninja, SDL2 호환 라이브러리, SDL2_image, SDL2_ttf, SDL2_gfx, Boost, OpenAL, SQLite다.
 
-친구가 **현재 Git 브랜치를 받아 자기 Mac에서 빌드**한다면 Command Line Tools가 필요하다(`xcode-select --install`). 전체 Xcode 앱은 필요하지 않다. 빌드가 끝나면 결과 폴더에 기존 SIU 아이콘을 쓴 `SIU Football.app`을 자동 생성한다. 이 앱은 Homebrew 동적 라이브러리를 함께 넣지 않은 개발용 묶음이므로, 앱 폴더만 복사해 설치하는 방식은 아직 지원하지 않는다. 추후 의존성을 포함한 배포용 앱을 만들면 친구 Mac에서 컴파일할 필요가 없어 Command Line Tools 요구를 없앨 수 있다.
+친구가 **현재 Git 브랜치를 받아 자기 Mac에서 빌드**한다면 Command Line Tools가 필요하다(`xcode-select --install`). 전체 Xcode 앱은 필요하지 않다. 빌드가 끝나면 결과 폴더에 기존 SIU 아이콘을 쓴 `SIU Football.app`을 자동 생성한다. 이 기본 앱은 Homebrew 동적 라이브러리를 함께 넣지 않은 개발용 묶음이다.
+
+macOS 26 Apple Silicon 테스트용으로 라이브러리를 포함한 압축 앱도 만들 수 있다. 두 번째 Mac은 이 압축 파일을 내려받아 풀고 앱을 열 수 있으며, 소스 빌드나 Homebrew 설치가 필요하지 않다. 현재 서명은 임시 서명이고 Apple 공증은 없으므로 다운로드한 Mac에서 첫 실행 시 보안 설정의 **열기 허용**이 필요할 수 있다. 이 절차는 별도 Mac에서 아직 검증하지 않았다.
+
+```sh
+Scripts/build-gameplayfootball-macos.sh --quick-match
+python3 Scripts/package-gameplayfootball-test-app.py \
+  "dist/SIU Football.app" "dist/SIU-Football-macos26-arm64-test.zip"
+```
 
 ```sh
 brew install cmake ninja sdl2-compat sdl2_image sdl2_ttf sdl2_gfx boost openal-soft
@@ -51,6 +59,7 @@ Scripts/test-gameplayfootball-lan.sh
 - 사용자가 보고한 반복 종료의 macOS 충돌 보고서에서 SDL 비디오/조이스틱 종료 스레드 문제를 확인했다. 비디오는 메인 스레드, 조이스틱은 초기화한 작업 스레드에서 정리하도록 수정한 후 진단용 정상 종료·재실행 2회가 종료 코드 0으로 통과했다.
 - 빠른 경기에서 게임패드가 감지되어도 키보드를 빨강 팀에 배정하도록 수정했다. 진단 빌드에서 S 키 눌림/해제가 HID의 짧은 패스 입력까지 전달됐고, 킥오프 휘슬 뒤 S 입력으로 세트피스가 끝나며 경기 시계가 진행되는 것을 확인했다.
 - 실제 키보드 조작이 된다는 사용자 확인을 받았다. 원본의 패스 대상 자동 전환을 유지하고, 꺼져 있던 근접 선수 자동 전환을 후보 250ms 유지·도달 시간 차이·전환 후 유지 시간 조건으로 다시 구현했다. 수동 전환은 1.5초 우선한다. 진단 경기에서 킥오프 이후 자동 선택 변화를 확인했지만 패스 수신·수비 각각의 체감은 사용자 재시험이 필요하다.
+- macOS 26 arm64 테스트 앱에 Homebrew 동적 라이브러리 35개와 설치된 라이선스 고지를 포함했다. 압축 파일을 풀어 코드 서명을 검사하고, 압축에서 꺼낸 경기 실행 파일의 경기 생성·정상 종료를 확인했다. 다른 Mac의 Gatekeeper 통과와 실제 Wi-Fi 대전은 아직 확인하지 않았다.
 
 아직 10분 경기 완주, 골키퍼 수동 위치 조정·상황별 배급, FC온라인 복합 슛/패스·개인기, 두 Mac LAN 대전은 검증·구현되지 않았다. OpenGL 실행 중 텍스처 샘플러 관련 드라이버 경고가 1회 발생해 화면 검증이 필요하다. 키 배치는 맞춰 가는 중이지만 원본 게임의 액션 의미와 FC온라인의 정확한 동작이 동일하다는 뜻은 아니다.
 
