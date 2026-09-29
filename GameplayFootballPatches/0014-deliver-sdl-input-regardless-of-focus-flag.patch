@@ -1,0 +1,15 @@
+diff --git a/src/systems/graphics/rendering/opengl_renderer3d.cpp b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+--- a/src/systems/graphics/rendering/opengl_renderer3d.cpp
++++ b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+@@ -2347,8 +2347,8 @@ void OpenGLRenderer3D::operator()() {
+             break;
+         }
+ 
+-        if (contextIsActive || event.type == SDL_WINDOWEVENT) { // always deliver focus loss to clear held keys
+-          UserEventManager::GetInstance().InputSDLEvent(event);
+-        }
++        // SDL already sends keyboard events only to the focused window. The
++        // cached focus flag can lag behind events and must not discard input.
++        UserEventManager::GetInstance().InputSDLEvent(event);
+ 
+       }
