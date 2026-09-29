@@ -1,0 +1,43 @@
+diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
+--- a/src/onthepitch/team.cpp
++++ b/src/onthepitch/team.cpp
+@@ -517,5 +517,19 @@ void Team::UpdateSwitch() {
+     }
+   }
+ 
++  // At a restart the kicker must receive this team's human input, including
++  // when the kicker is the goalkeeper. Normal proximity switching is paused.
++  if (match->IsInSetPiece()) {
++    Player *taker = teamController->GetPieceTaker();
++    if (taker && taker->IsActive() && !humanGamers.empty() &&
++        !IsHumanControlled(taker->GetID())) {
++      humanGamers.at(*switchPriority.begin())->SetSelectedPlayerID(taker->GetID());
++      manualSwitchHoldUntil_ms = 0;
++      automaticSwitchHoldUntil_ms = 0;
++    }
++    automaticSwitchCandidate = 0;
++    return;
++  }
++
+ 
+   // Follow the likely receiver or defender only after the target remains stable. A recent
+diff --git a/src/onthepitch/player/controller/humancontroller.cpp b/src/onthepitch/player/controller/humancontroller.cpp
+--- a/src/onthepitch/player/controller/humancontroller.cpp
++++ b/src/onthepitch/player/controller/humancontroller.cpp
+@@ -476,7 +476,7 @@ float HumanController::GetFloatVelocity() {
+ }
+ 
+ int HumanController::GetReactionTime_ms() {
+-  return IController::GetReactionTime_ms(); // already have human reaction time to contend with
++  return 0; // direct human input must not inherit simulated AI reaction delay
+ }
+ 
+ void HumanController::Reset() {
+@@ -487,6 +487,6 @@ void HumanController::Reset() {
+   actionBufferTime_ms = 0;
+ 
+   lastSwitchTime_ms = -10000;
+-  lastSwitchTimeDuration_ms = 300;
++  lastSwitchTimeDuration_ms = 0;
+ 
+   lastSteadyDirectionSnapshotTime_ms = 0;
