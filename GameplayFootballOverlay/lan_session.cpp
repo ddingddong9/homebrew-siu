@@ -18,6 +18,7 @@ void LanSession::Close() {
   socket_ = -1;
   mode_ = LanMode::offline;
   peer_seen_ = false;
+  allowed_host_address_ = 0;
   has_input_ = false;
   has_snapshot_ = false;
   input_packets_ = 0;
@@ -40,6 +41,11 @@ bool LanSession::Configure(LanMode mode, const std::string &host_address, uint16
 
   mode_ = mode;
   if (mode == LanMode::host) {
+    if (!host_address.empty() && inet_pton(AF_INET, host_address.c_str(), &allowed_host_address_) != 1) {
+      error_ = "approved client must be an IPv4 address";
+      Close();
+      return false;
+    }
     sockaddr_in local{};
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -76,6 +82,7 @@ void LanSession::Poll() {
     }
     if (n > static_cast<ssize_t>(kMaxPacketSize) || sender_size != sizeof(sender)) continue;
     if (mode_ == LanMode::host) {
+      if (allowed_host_address_ && sender.sin_addr.s_addr != allowed_host_address_) continue;
       InputFrame incoming;
       if (!DecodeInput(bytes, size_t(n), incoming)) continue;
       if (peer_seen_ && (sender.sin_addr.s_addr != peer_.sin_addr.s_addr || sender.sin_port != peer_.sin_port)) continue;

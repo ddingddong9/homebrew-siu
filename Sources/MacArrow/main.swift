@@ -17,6 +17,7 @@ private func usage() {
       siu check <hostname-or-ip> [--port 45678]
       siu demo [--y 0.0...1.0]
       siu eleven-preview
+      siu football-lobby
       siu self-test
 
     Examples:
@@ -157,6 +158,53 @@ case "eleven-preview":
     let preview = MainActor.assumeIsolated { ElevenMatchWindowController() }
     MainActor.assumeIsolated { preview.show() }
     withExtendedLifetime(preview) { app.run() }
+
+case "football-lobby":
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    let lobby = MainActor.assumeIsolated { FootballLobbyWindowController() }
+    MainActor.assumeIsolated { lobby.show() }
+    withExtendedLifetime(lobby) { app.run() }
+
+case "football-lobby-self-test":
+    let app = NSApplication.shared
+    let host = MainActor.assumeIsolated { FootballLobbySession() }
+    let guest = MainActor.assumeIsolated { FootballLobbySession() }
+    var joined = false
+    var started = false
+    MainActor.assumeIsolated {
+        host.approve = { _ in true }
+        host.onChange = {
+            if host.connected && !started {
+                started = true
+                guard host.startMatch() else { fputs("Lobby start failed\n", stderr); exit(1) }
+            }
+        }
+        guest.onChange = {
+            if !joined && !guest.rooms.isEmpty {
+                joined = true
+                guest.join(index: 0)
+            }
+        }
+        guest.onStart = { isHost, address, port in
+            guard !isHost, !address.isEmpty, port == 38245 else {
+                fputs("Lobby start message invalid\n", stderr); exit(1)
+            }
+            print("Football lobby discovery, approval and start passed: \(address):\(port)")
+            host.stop(); guest.stop(); exit(0)
+        }
+        host.onStart = { _, _, _ in true }
+        do { try host.host(name: "SIU self test \(UUID().uuidString.prefix(8))") }
+        catch { fputs("Lobby host failed: \(error)\n", stderr); exit(1) }
+        guest.browse()
+        Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { _ in
+            MainActor.assumeIsolated {
+                fputs("Football lobby self-test timed out: host=\(host.status), guest=\(guest.status)\n", stderr)
+                exit(1)
+            }
+        }
+    }
+    withExtendedLifetime((host, guest)) { app.run() }
 
 case "setup":
     let app = NSApplication.shared

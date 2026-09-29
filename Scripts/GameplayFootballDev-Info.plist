@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleDevelopmentRegion</key><string>en</string>
-  <key>CFBundleExecutable</key><string>launch-gameplayfootball</string>
+  <key>CFBundleExecutable</key><string>siu</string>
   <key>CFBundleIconFile</key><string>siu.icns</string>
   <key>CFBundleIdentifier</key><string>io.siu.gameplayfootball.dev</string>
   <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
@@ -13,6 +13,9 @@
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>SIULaunchMode</key><string>football-lobby</string>
+  <key>NSBonjourServices</key>
+  <array><string>_siu-football._tcp</string></array>
   <key>NSLocalNetworkUsageDescription</key>
   <string>같은 Wi-Fi의 친구와 SIU Football 개발 경기를 연결합니다.</string>
 </dict>

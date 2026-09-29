@@ -1,6 +1,6 @@
 # siu
 
-> GameplayFootball 3D LAN 작업은 이 저장소의 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에서 진행 중입니다. 아래의 기존 Swift 기반 SIU 11대11 로비와는 별도 실행 파일입니다. 다른 Mac에서 이어서 개발하려면 [GameplayFootball 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 먼저 보세요. 현재 GameplayFootball에는 게임 안 방 만들기·방 검색·참가 승인 로비가 아직 없습니다.
+> GameplayFootball 3D LAN 작업은 이 저장소의 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에서 진행 중입니다. 새 `SIU Football.app`은 빨강/파랑 SIU 로비에서 방 생성·검색·승인 후 GameplayFootball 경기를 엽니다. 아래 설명은 기존 Swift 11대11 베타 앱에 관한 내용입니다. 새 앱의 빌드와 미완성 범위는 [GameplayFootball 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 보세요.
 
 두 사람이 각각 11명 팀을 조작하는 macOS 아케이드 축구 게임입니다. 1.12 베타부터 앱을 열면 **11대11 홈 화면**이 먼저 나타납니다. 기존 1대1 모드는 메뉴바에 유지됩니다.
 

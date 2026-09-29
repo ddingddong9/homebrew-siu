@@ -38,6 +38,7 @@ class LanSession {
   int socket_ = -1;
   LanMode mode_ = LanMode::offline;
   sockaddr_in peer_{};
+  uint32_t allowed_host_address_ = 0;
   bool peer_seen_ = false;
   std::string error_;
   InputFrame latest_input_;

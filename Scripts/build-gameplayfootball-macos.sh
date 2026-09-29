@@ -68,6 +68,11 @@ if ! (cd "$stage" && cmake --build "$build_dir" --parallel "$(sysctl -n hw.ncpu)
   print -u2 "Full build log: $stage/build.log"
   exit 1
 fi
+(cd "$repo_root" && swift build -c release > "$stage/swift-build.log" 2>&1) || {
+  tail -n 60 "$stage/swift-build.log" >&2
+  print -u2 "SIU lobby build log: $stage/swift-build.log"
+  exit 1
+}
 ditto "$source_dir/data" "$build_dir"
 if $quick_match; then
   print '"debug" "true"' >> "$build_dir/football.config"
@@ -90,5 +95,9 @@ print "GameplayFootball built at: $build_dir/gameplayfootball"
 print "Application: $app_output"
 print "Build log: $stage/build.log"
 if $run_game; then
-  open "$app_output"
+  if [[ -n "$lan_role" ]]; then
+    (cd "$build_dir" && ./gameplayfootball)
+  else
+    open "$app_output"
+  fi
 fi

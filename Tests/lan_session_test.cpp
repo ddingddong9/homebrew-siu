@@ -10,13 +10,20 @@ int main() {
   using namespace siu;
   const uint16_t port = uint16_t(30000 + getpid() % 20000);
   LanSession host, client, stranger;
-  assert(host.Configure(LanMode::host, "", port));
+  assert(host.Configure(LanMode::host, "127.0.0.2", port));
   assert(client.Configure(LanMode::client, "127.0.0.1", port));
   assert(stranger.Configure(LanMode::client, "127.0.0.1", port));
 
   InputFrame input;
   input.sequence = 1;
   input.button_mask = 1u << 7;
+  assert(client.SendInput(input));
+  for (int i = 0; i < 10; ++i) {
+    host.Poll();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  assert(!host.peer_seen()); // a client outside the approved address cannot claim the match
+  assert(host.Configure(LanMode::host, "127.0.0.1", port));
   assert(client.SendInput(input));
   InputFrame received;
   for (int i = 0; i < 100 && !host.LatestInput(received); ++i) {

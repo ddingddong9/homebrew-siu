@@ -9,6 +9,11 @@ fi
 build_dir="${1:A}"
 script_dir="${0:A:h}"
 repo_root="${script_dir:h}"
+swift_binary="$repo_root/.build/release/siu"
+if [[ ! -x "$swift_binary" ]]; then
+  print -u2 "Missing SIU lobby executable: $swift_binary"
+  exit 1
+fi
 icon_source="$repo_root/Assets/icon/siu-cutout.png"
 app_dir="$build_dir/SIU Football.app"
 contents="$app_dir/Contents"
@@ -18,6 +23,7 @@ if [[ ! -f "$icon_source" ]]; then
 fi
 mkdir -p "$contents/MacOS" "$contents/Resources"
 ditto "$build_dir/gameplayfootball" "$contents/MacOS/gameplayfootball"
+ditto "$swift_binary" "$contents/MacOS/siu"
 ditto "$script_dir/launch-gameplayfootball-dev.sh" "$contents/MacOS/launch-gameplayfootball"
 ditto "$script_dir/GameplayFootballDev-Info.plist" "$contents/Info.plist"
 for item in football.config media databases; do
