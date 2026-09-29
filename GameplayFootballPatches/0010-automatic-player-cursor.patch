@@ -1,0 +1,98 @@
+diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
+--- a/src/onthepitch/team.cpp
++++ b/src/onthepitch/team.cpp
+@@ -17,6 +17,11 @@
+ Team::Team(int id, Match *match, TeamData *teamData) : id(id), match(match), teamData(teamData) {
+   assert(id == 0 || id == 1);
+   assert(teamData->GetPlayerNum() >= playerNum); // does team have enough players?
++
++  automaticSwitchCandidate = 0;
++  automaticSwitchCandidateSince_ms = 0;
++  manualSwitchHoldUntil_ms = 0;
++  automaticSwitchHoldUntil_ms = 0;
+ 
+   teamNode = boost::intrusive_ptr<Node>(new Node("team node #" + int_to_str(id)));
+   teamNode->SetLocalMode(e_LocalMode_Absolute);
+@@ -286,10 +291,12 @@
+ 
+ void Team::SelectPlayer(Player *player) {
+   //printf("trying to switch to %s\n", player->GetPlayerData()->GetLastName().c_str());
+-  if (!IsHumanControlled(player->GetID()) && humanGamers.size() != 0) { // already selected
++  if (!IsHumanControlled(player->GetID()) && humanGamers.size() != 0 &&
++      match->GetActualTime_ms() >= manualSwitchHoldUntil_ms) { // respect a recent manual selection
+     humanGamers.at(*switchPriority.begin())->SetSelectedPlayerID(player->GetID());
+     switchPriority.push_back(*switchPriority.begin());
+     switchPriority.pop_front();
++    automaticSwitchHoldUntil_ms = match->GetActualTime_ms() + 1200;
+     if (Verbose()) printf("switched player to %s\n", player->GetPlayerData()->GetLastName().c_str());
+   }
+   designatedTeamPossessionPlayer = player;
+@@ -390,7 +397,11 @@
+           if (targetPlayer) {
+             targetPlayerID = targetPlayer->GetID();
+           }
+-          if (targetPlayerID != -1) humanGamers.at(i)->SetSelectedPlayerID(targetPlayerID);
++          if (targetPlayerID != -1) {
++            humanGamers.at(i)->SetSelectedPlayerID(targetPlayerID);
++            manualSwitchHoldUntil_ms = match->GetActualTime_ms() + 1500;
++            automaticSwitchCandidate = 0;
++          }
+         }
+ 
+       }
+@@ -520,16 +531,30 @@
+   }
+ 
+ 
+-  // autoswitch on proximity
+-
+-/* recently disabled
+-  if (match->IsInPlay() && humanGamers.size() > 0) {
+-    if (!IsHumanControlled(designatedTeamPossessionPlayer->GetID()) &&
+-        designatedTeamPossessionPlayer->GetTimeNeededToGetToBall_ms() < 2000 && // proximity
+-        designatedTeamPossessionPlayer->GetTimeNeededToGetToBall_ms() <= this->GetTimeNeededToGetToBall_ms() && // sometimes, the designated team possession player is not the player quickest to ball. don't autoswitch then
+-        GetTeamPossessionAmount() > 1.3f) SelectPlayer(designatedTeamPossessionPlayer);
+-  }
+-*/
++  // Follow the likely receiver or defender only after the target remains stable. A recent
++  // manual selection or pass target keeps priority so the cursor does not jump.
++  Player *candidate = 0;
++  if (match->IsInPlay() && !match->IsInSetPiece() && !humanGamers.empty()) {
++    Player *nearest = GetBestPossessionPlayer();
++    if (nearest && nearest != GetGoalie() && nearest->IsActive() &&
++        nearest->GetTimeNeededToGetToBall_ms() < 2500 &&
++        !IsHumanControlled(nearest->GetID())) {
++      Player *selected = humanGamers.at(*switchPriority.begin())->GetSelectedPlayer();
++      if (!selected || !selected->IsActive() ||
++          selected->GetTimeNeededToGetToBall_ms() > nearest->GetTimeNeededToGetToBall_ms() + 600)
++        candidate = nearest;
++    }
++  }
++  if (candidate != automaticSwitchCandidate) {
++    automaticSwitchCandidate = candidate;
++    automaticSwitchCandidateSince_ms = match->GetActualTime_ms();
++  } else if (candidate &&
++             match->GetActualTime_ms() >= automaticSwitchCandidateSince_ms + 250 &&
++             match->GetActualTime_ms() >= manualSwitchHoldUntil_ms &&
++             match->GetActualTime_ms() >= automaticSwitchHoldUntil_ms) {
++    SelectPlayer(candidate);
++    automaticSwitchCandidate = 0;
++  }
+ 
+   //if (GetID() == 0) printf("teamposs %f\n", GetTeamPossessionAmount());
+ 
+diff --git a/src/onthepitch/team.hpp b/src/onthepitch/team.hpp
+--- a/src/onthepitch/team.hpp
++++ b/src/onthepitch/team.hpp
+@@ -111,6 +111,11 @@
+     // begin() == due next
+     std::list<int> switchPriority;
+ 
++    Player *automaticSwitchCandidate;
++    unsigned long automaticSwitchCandidateSince_ms;
++    unsigned long manualSwitchHoldUntil_ms;
++    unsigned long automaticSwitchHoldUntil_ms;
++
+     Player *lastTouchPlayers[e_TouchType_SIZE];
+     Player *lastTouchPlayer;
+     e_TouchType lastTouchType;
