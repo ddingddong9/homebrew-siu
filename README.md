@@ -1,5 +1,17 @@
 # siu
 
+## GameplayFootball 테스트 앱 설치
+
+macOS 26 Apple Silicon Mac 두 대에서 각각 실행하면 **응용 프로그램**에 `SIU Football.app`이 설치됩니다.
+
+```bash
+brew install --cask ddingddong9/siu/siu-football-beta
+```
+
+앱을 열어 같은 Wi-Fi에서 한쪽은 **방 만들기**, 다른 쪽은 **방 검색 → 참가**를 누릅니다. 방장이 참가를 승인하고 경기를 시작합니다. 두 Mac 간 경기 동기화는 아직 실기기로 검증 중입니다. Apple 공증 전이므로 첫 실행이 차단되면 **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용해야 할 수 있습니다. 이 테스트 앱은 아래의 기존 `SIU.app`과 별도로 설치됩니다. GameplayFootball 작업 코드는 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에 있습니다.
+
+## 기존 SIU 앱
+
 두 사람이 각각 11명 팀을 조작하는 macOS 아케이드 축구 게임입니다. 1.12 베타부터 앱을 열면 **11대11 홈 화면**이 먼저 나타납니다. 기존 1대1 모드는 메뉴바에 유지됩니다.
 
 ## 설치
