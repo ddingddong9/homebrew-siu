@@ -1,0 +1,32 @@
+diff --git a/src/data/teamdata.hpp b/src/data/teamdata.hpp
+--- a/src/data/teamdata.hpp
++++ b/src/data/teamdata.hpp
+@@ -31,6 +31,7 @@ class TeamData {
+     virtual ~TeamData();
+ 
+     std::string GetName() { return name; }
++    void SetDisplayName(const std::string &displayName, const std::string &abbreviation) {
++      name = displayName;
++      shortName = abbreviation;
++    }
+     std::string GetShortName() { return shortName; }
+diff --git a/src/data/matchdata.cpp b/src/data/matchdata.cpp
+--- a/src/data/matchdata.cpp
++++ b/src/data/matchdata.cpp
+@@ -3,10 +3,17 @@
+ // i do not offer support, so don't ask. to be used for inspiration :)
+ 
+ #include "matchdata.hpp"
++#include "../main.hpp"
+ 
+ MatchData::MatchData(int team1DatabaseID, int team2DatabaseID) {
+   teamData[0] = new TeamData(team1DatabaseID);
+   teamData[1] = new TeamData(team2DatabaseID);
++  std::string homeName = GetConfiguration()->Get("siu_home_team_name", "");
++  std::string awayName = GetConfiguration()->Get("siu_away_team_name", "");
++  if (!homeName.empty()) teamData[0]->SetDisplayName(homeName,
++      GetConfiguration()->Get("siu_home_team_short_name", homeName));
++  if (!awayName.empty()) teamData[1]->SetDisplayName(awayName,
++      GetConfiguration()->Get("siu_away_team_short_name", awayName));
+ 
+   goalCount[0] = 0;

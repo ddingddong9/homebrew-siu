@@ -1,0 +1,84 @@
+diff --git a/src/managers/usereventmanager.hpp b/src/managers/usereventmanager.hpp
+--- a/src/managers/usereventmanager.hpp
++++ b/src/managers/usereventmanager.hpp
+@@ -26,6 +26,7 @@
+ 
+ #include <SDL2/SDL.h>
+ #include <map>
++#include <set>
+ 
+ namespace blunted {
+ 
+@@ -50,6 +51,7 @@
+       virtual void InputSDLEvent(const SDL_Event &event);
+ 
+       bool GetKeyboardState(SDL_Keycode code) const;
++      bool GetPhysicalKeyState(SDL_Scancode code) const;
+       std::map<SDL_Keycode, TimedKeyPress> GetKeyboardState() const;
+       void SetKeyboardState(SDL_Keycode key, bool newState);
+       unsigned long GetLastKeyPressDiff_ms();
+@@ -74,6 +76,7 @@
+       // so basically, it's the parent structure, and we are going to need that info at some point, and we can't make an array with the max size (probably) since
+       // i guess it has a dynamic size.
+       std::map<SDL_Keycode, TimedKeyPress> keyPressed;
++      std::set<SDL_Scancode> physicalKeysPressed;
+       unsigned long lastKeyTime_ms = 0;
+ 
+       bool mousePressed[8];
+diff --git a/src/managers/usereventmanager.cpp b/src/managers/usereventmanager.cpp
+--- a/src/managers/usereventmanager.cpp
++++ b/src/managers/usereventmanager.cpp
+@@ -74,12 +74,14 @@
+     switch (event.type) {
+       case SDL_KEYDOWN:
+         keyPressedMutex.lock();
++        physicalKeysPressed.insert(event.key.keysym.scancode);
+         keyPressed[event.key.keysym.sym].pressTime_ms = EnvironmentManager::GetInstance().GetTime_ms();
+         lastKeyTime_ms = keyPressed[event.key.keysym.sym].pressTime_ms;
+         keyPressedMutex.unlock();
+         break;
+       case SDL_KEYUP:
+         keyPressedMutex.lock();
++        physicalKeysPressed.erase(event.key.keysym.scancode);
+         keyPressed.erase(event.key.keysym.sym);
+         keyPressedMutex.unlock();
+         break;
+@@ -87,6 +89,7 @@
+         if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+           boost::mutex::scoped_lock lock(keyPressedMutex);
+           keyPressed.clear();
++          physicalKeysPressed.clear();
+         }
+         break;
+       case SDL_MOUSEBUTTONDOWN:
+@@ -122,6 +125,11 @@
+   bool UserEventManager::GetKeyboardState(SDL_Keycode code) const {
+     boost::mutex::scoped_lock lock(keyPressedMutex);
+     return keyPressed.count(code) > 0;
++  }
++
++  bool UserEventManager::GetPhysicalKeyState(SDL_Scancode code) const {
++    boost::mutex::scoped_lock lock(keyPressedMutex);
++    return physicalKeysPressed.count(code) > 0;
+   }
+ 
+   std::map<SDL_Keycode, TimedKeyPress> UserEventManager::GetKeyboardState() const {
+diff --git a/src/hid/keyboard.cpp b/src/hid/keyboard.cpp
+--- a/src/hid/keyboard.cpp
++++ b/src/hid/keyboard.cpp
+@@ -48,7 +48,14 @@
+   boost::mutex::scoped_lock blah(mutex);
+   for (int i = 0; i < e_ButtonFunction_Size; i++) {
+     previousFunctionButtonState[i] = functionButtonState[i];
+-    functionButtonState[i] = UserEventManager::GetInstance().GetKeyboardState(functionMapping[i]);
++    SDL_Keycode key = functionMapping[i];
++    // Gameplay actions use physical letter positions across input sources.
++    if (key >= SDLK_a && key <= SDLK_z) {
++      SDL_Scancode physical = SDL_Scancode(SDL_SCANCODE_A + (key - SDLK_a));
++      functionButtonState[i] = UserEventManager::GetInstance().GetPhysicalKeyState(physical);
++    } else {
++      functionButtonState[i] = UserEventManager::GetInstance().GetKeyboardState(key);
++    }
+   }
+ }
+ 

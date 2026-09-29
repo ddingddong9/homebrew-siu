@@ -170,31 +170,42 @@ case "football-lobby-self-test":
     let app = NSApplication.shared
     let host = MainActor.assumeIsolated { FootballLobbySession() }
     let guest = MainActor.assumeIsolated { FootballLobbySession() }
+    let testRoomName = "SIU self test \(UUID().uuidString.prefix(8))"
     var joined = false
     var started = false
     MainActor.assumeIsolated {
         host.approve = { _ in true }
         host.onChange = {
+            if ProcessInfo.processInfo.environment["SIU_LOBBY_DIAGNOSTIC"] != nil {
+                fputs("host: \(host.status)\n", stderr)
+            }
             if host.connected && !started {
                 started = true
                 guard host.startMatch() else { fputs("Lobby start failed\n", stderr); exit(1) }
             }
         }
         guest.onChange = {
-            if !joined && !guest.rooms.isEmpty {
+            if ProcessInfo.processInfo.environment["SIU_LOBBY_DIAGNOSTIC"] != nil {
+                fputs("guest: \(guest.status)\n", stderr)
+            }
+            if !joined, let index = guest.rooms.firstIndex(where: { $0.name == testRoomName }) {
                 joined = true
-                guest.join(index: 0)
+                guest.join(index: index, teamName: "Blue Ronaldo")
             }
         }
         guest.onStart = { isHost, address, port in
-            guard !isHost, !address.isEmpty, port == 38245 else {
+            guard !isHost, !address.isEmpty, port == 38245,
+                  guest.homeTeamName == "Red Ronaldo", guest.awayTeamName == "Blue Ronaldo",
+                  host.homeTeamName == guest.homeTeamName,
+                  host.awayTeamName == guest.awayTeamName else {
                 fputs("Lobby start message invalid\n", stderr); exit(1)
             }
             print("Football lobby discovery, approval and start passed: \(address):\(port)")
             host.stop(); guest.stop(); exit(0)
         }
         host.onStart = { _, _, _ in true }
-        do { try host.host(name: "SIU self test \(UUID().uuidString.prefix(8))") }
+        do { try host.host(name: testRoomName,
+                           teamName: "Red Ronaldo") }
         catch { fputs("Lobby host failed: \(error)\n", stderr); exit(1) }
         guest.browse()
         Timer.scheduledTimer(withTimeInterval: 12, repeats: false) { _ in

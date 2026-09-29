@@ -20,7 +20,7 @@ diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
 +  }
 +
  
-   // Follow the likely receiver or defender only after the target remains stable. A recent
+   // FC-style assisted switching: keep the cursor during ordinary defending.
 diff --git a/src/onthepitch/player/controller/humancontroller.cpp b/src/onthepitch/player/controller/humancontroller.cpp
 --- a/src/onthepitch/player/controller/humancontroller.cpp
 +++ b/src/onthepitch/player/controller/humancontroller.cpp

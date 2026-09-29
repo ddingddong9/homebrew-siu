@@ -7,6 +7,7 @@ private struct FootballLobbyMessage: Codable {
     let kind: String
     var address: String? = nil
     var port: UInt16? = nil
+    var teamName: String? = nil
 }
 
 @MainActor
@@ -15,6 +16,8 @@ final class FootballLobbySession {
     enum Role { case idle, host, guest }
     private(set) var role: Role = .idle
     private(set) var connected = false
+    private(set) var homeTeamName = "빨강 팀"
+    private(set) var awayTeamName = "파랑 팀"
     private(set) var status = "로컬 연습 또는 같은 Wi-Fi의 방을 선택하세요"
     private(set) var rooms: [(name: String, endpoint: NWEndpoint)] = []
     var onChange: (() -> Void)?
@@ -27,13 +30,14 @@ final class FootballLobbySession {
     private var receiveBuffer = Data()
     private var generation = UUID()
 
-    func host(name: String) throws {
+    func host(name: String, teamName: String) throws {
         stop()
+        homeTeamName = teamName
         let listener = try NWListener(using: .tcp, on: .any)
         self.listener = listener
         role = .host
         listener.service = NWListener.Service(name: String(name.prefix(40)), type: Self.service,
-            txtRecord: NWTXTRecord(["version": "1"]))
+            txtRecord: NWTXTRecord(["version": "2"]))
         listener.newConnectionHandler = { [weak self] candidate in
             MainActor.assumeIsolated {
                 guard let self, self.connection == nil else { candidate.cancel(); return }
@@ -78,8 +82,9 @@ final class FootballLobbySession {
         setStatus("같은 Wi-Fi의 SIU 방 검색 중…")
     }
 
-    func join(index: Int) {
+    func join(index: Int, teamName: String) {
         guard rooms.indices.contains(index), connection == nil else { return }
+        awayTeamName = teamName
         let peer = NWConnection(to: rooms[index].endpoint, using: .tcp)
         attach(peer)
         setStatus("방장 승인 대기 중…")
@@ -94,7 +99,7 @@ final class FootballLobbySession {
             setStatus("방장 경기 실행에 실패했습니다")
             return false
         }
-        send(FootballLobbyMessage(version: 1, kind: "start", address: address, port: port))
+        send(FootballLobbyMessage(version: 2, kind: "start", address: address, port: port))
         setStatus("빨강 팀 · 경기 실행 중")
         return true
     }
@@ -113,7 +118,8 @@ final class FootballLobbySession {
                             self.lost("Wi-Fi IPv4 주소를 찾을 수 없습니다")
                             return
                         }
-                        self.send(FootballLobbyMessage(version: 1, kind: "hello", address: address))
+                        self.send(FootballLobbyMessage(version: 2, kind: "hello", address: address,
+                                                       teamName: self.awayTeamName))
                     }
                     self.receive(peer, identity: identity)
                 case .failed(let error): self.lost("연결 실패: \(error.localizedDescription)")
@@ -135,7 +141,7 @@ final class FootballLobbySession {
                     let line = Data(self.receiveBuffer[..<newline])
                     self.receiveBuffer.removeSubrange(...newline)
                     guard let message = try? JSONDecoder().decode(FootballLobbyMessage.self, from: line),
-                          message.version == 1 else { self.lost("호환되지 않는 로비 메시지"); return }
+                          message.version == 2 else { self.lost("두 Mac에 같은 최신 버전을 설치하세요"); return }
                     self.accept(message)
                 }
                 if done || error != nil { self.lost("친구 연결이 끊겼습니다"); return }
@@ -145,13 +151,20 @@ final class FootballLobbySession {
     }
 
     private func accept(_ message: FootballLobbyMessage) {
+        if ProcessInfo.processInfo.environment["SIU_LOBBY_DIAGNOSTIC"] != nil {
+            fputs("lobby \(role) received \(message.kind) team=\(message.teamName ?? "nil")\n", stderr)
+        }
         if role == .host && message.kind == "hello", let address = message.address,
-           Self.validIPv4(address) {
+           Self.validIPv4(address), let teamName = message.teamName,
+           Self.validTeamName(teamName) {
             guestAddress = address
+            awayTeamName = teamName
             connected = true
-            send(FootballLobbyMessage(version: 1, kind: "welcome"))
+            send(FootballLobbyMessage(version: 2, kind: "welcome", teamName: homeTeamName))
             setStatus("빨강 팀 · 친구 연결됨 · 경기 시작 가능")
-        } else if role == .guest && message.kind == "welcome" {
+        } else if role == .guest && message.kind == "welcome",
+                  let teamName = message.teamName, Self.validTeamName(teamName) {
+            homeTeamName = teamName
             connected = true
             setStatus("파랑 팀 · 연결됨 · 방장의 경기 시작 대기 중")
         } else if role == .guest && connected && message.kind == "start",
@@ -189,6 +202,11 @@ final class FootballLobbySession {
     private static func validIPv4(_ value: String) -> Bool {
         var address = in_addr()
         return value.withCString { inet_pton(AF_INET, $0, &address) == 1 }
+    }
+
+    private static func validTeamName(_ value: String) -> Bool {
+        !value.isEmpty && value.count <= 20 &&
+        value.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) || $0 == " " || $0 == "-" }
     }
 
     private static func wifiIPv4() -> String? {

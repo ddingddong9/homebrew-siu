@@ -151,23 +151,65 @@ final class FootballLobbyWindowController: NSWindowController, NSWindowDelegate 
     @objc private func host() {
         let alert = NSAlert()
         alert.messageText = "SIU 방 만들기"
-        alert.informativeText = "친구의 Mac에 표시할 방 이름을 입력하세요."
+        alert.informativeText = "방 이름과 경기에서 사용할 내 팀 이름을 입력하세요."
+        let fields = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 82))
+        let teamLabel = NSTextField(labelWithString: "내 팀 이름 (최대 20자)")
+        teamLabel.frame = NSRect(x: 0, y: 34, width: 300, height: 20)
+        fields.addSubview(teamLabel)
+        let team = NSTextField(string: UserDefaults.standard.string(forKey: "siuFootballTeamName") ?? "SIU")
+        team.frame = NSRect(x: 0, y: 8, width: 300, height: 26)
+        fields.addSubview(team)
         let name = NSTextField(string: "\(Host.current().localizedName ?? "SIU")의 방")
-        name.frame = NSRect(x: 0, y: 0, width: 300, height: 26)
-        alert.accessoryView = name
+        name.frame = NSRect(x: 0, y: 58, width: 300, height: 26)
+        fields.addSubview(name)
+        alert.accessoryView = fields
         alert.addButton(withTitle: "방 만들기"); alert.addButton(withTitle: "취소")
         if alert.runModal() == .alertFirstButtonReturn {
-            do { try session.host(name: name.stringValue.isEmpty ? "SIU 방" : name.stringValue) }
+            guard let teamName = validatedTeamName(team.stringValue) else { return }
+            UserDefaults.standard.set(teamName, forKey: "siuFootballTeamName")
+            do { try session.host(name: name.stringValue.isEmpty ? "SIU 방" : name.stringValue,
+                                  teamName: teamName) }
             catch { statusLabel.stringValue = "방 생성 실패: \(error.localizedDescription)" }
         }
     }
     @objc private func browse() { session.browse() }
-    @objc private func join() { session.join(index: roomPicker.indexOfSelectedItem) }
+    @objc private func join() {
+        guard roomPicker.indexOfSelectedItem >= 0, let teamName = askTeamName() else { return }
+        session.join(index: roomPicker.indexOfSelectedItem, teamName: teamName)
+    }
     @objc private func start() { _ = session.startMatch() }
     @objc private func leave() { session.stop() }
-    @objc private func practice() { _ = launchGame(role: "offline", address: "", port: 38245) }
+    @objc private func practice() {
+        guard let teamName = askTeamName() else { return }
+        _ = launchGame(role: "offline", address: "", port: 38245, practiceTeamName: teamName)
+    }
 
-    private func launchGame(role: String, address: String, port: UInt16) -> Bool {
+    private func validatedTeamName(_ input: String) -> String? {
+        let name = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 20,
+              name.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == " " || $0 == "-" }) else {
+            statusLabel.stringValue = "팀 이름은 1~20자의 글자·숫자·공백·하이픈만 사용할 수 있습니다"
+            return nil
+        }
+        return name
+    }
+
+    private func askTeamName() -> String? {
+        let alert = NSAlert()
+        alert.messageText = "경기 전 내 팀 이름"
+        alert.informativeText = "친구의 화면과 경기 점수판에 표시됩니다."
+        let field = NSTextField(string: UserDefaults.standard.string(forKey: "siuFootballTeamName") ?? "SIU")
+        field.frame = NSRect(x: 0, y: 0, width: 300, height: 26)
+        alert.accessoryView = field
+        alert.addButton(withTitle: "확인"); alert.addButton(withTitle: "취소")
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let name = validatedTeamName(field.stringValue) else { return nil }
+        UserDefaults.standard.set(name, forKey: "siuFootballTeamName")
+        return name
+    }
+
+    private func launchGame(role: String, address: String, port: UInt16,
+                            practiceTeamName: String? = nil) -> Bool {
         guard game == nil, let bundle = Bundle.main.resourceURL else { return false }
         let executable = Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/gameplayfootball")
         let sourceConfig = bundle.appendingPathComponent("football.config")
@@ -176,11 +218,22 @@ final class FootballLobbyWindowController: NSWindowController, NSWindowDelegate 
             return false
         }
         let baseConfig = original.split(separator: "\n").filter {
-            !["\"debug\"", "\"siu_lan_role\"", "\"siu_lan_host\"", "\"siu_lan_port\""].contains($0.split(separator: " ").first.map(String.init) ?? "")
+            !["\"debug\"", "\"font_filename\"", "\"siu_lan_role\"", "\"siu_lan_host\"", "\"siu_lan_port\""].contains($0.split(separator: " ").first.map(String.init) ?? "")
         }.joined(separator: "\n")
+        let homeName = practiceTeamName ?? session.homeTeamName
+        let awayName = role == "offline" ? "AI" : session.awayTeamName
+        let koreanFont = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+        let needsKoreanFont = (homeName + awayName).unicodeScalars.contains { !$0.isASCII }
+        let fontConfig = needsKoreanFont && FileManager.default.fileExists(atPath: koreanFont)
+            ? "\"font_filename\" \"\(koreanFont)\"\n" : ""
         let configuration = baseConfig + "\n\"debug\" \"true\"\n" +
+            fontConfig +
             "\"siu_lan_role\" \"\(role == "offline" ? "" : role)\"\n" +
-            "\"siu_lan_host\" \"\(address)\"\n\"siu_lan_port\" \"\(port)\"\n"
+            "\"siu_lan_host\" \"\(address)\"\n\"siu_lan_port\" \"\(port)\"\n" +
+            "\"siu_home_team_name\" \"\(homeName)\"\n" +
+            "\"siu_away_team_name\" \"\(awayName)\"\n" +
+            "\"siu_home_team_short_name\" \"\(String(homeName.prefix(3)))\"\n" +
+            "\"siu_away_team_short_name\" \"\(String(awayName.prefix(3)))\"\n"
         let configURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("siu-football-\(UUID().uuidString).config")
         do {

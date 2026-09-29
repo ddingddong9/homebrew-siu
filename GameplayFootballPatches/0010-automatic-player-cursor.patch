@@ -23,7 +23,7 @@ diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
      humanGamers.at(*switchPriority.begin())->SetSelectedPlayerID(player->GetID());
      switchPriority.push_back(*switchPriority.begin());
      switchPriority.pop_front();
-+    automaticSwitchHoldUntil_ms = match->GetActualTime_ms() + 1200;
++    automaticSwitchHoldUntil_ms = match->GetActualTime_ms() + 1800;
      if (Verbose()) printf("switched player to %s\n", player->GetPlayerData()->GetLastName().c_str());
    }
    designatedTeamPossessionPlayer = player;
@@ -34,7 +34,7 @@ diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
 -          if (targetPlayerID != -1) humanGamers.at(i)->SetSelectedPlayerID(targetPlayerID);
 +          if (targetPlayerID != -1) {
 +            humanGamers.at(i)->SetSelectedPlayerID(targetPlayerID);
-+            manualSwitchHoldUntil_ms = match->GetActualTime_ms() + 1500;
++            manualSwitchHoldUntil_ms = match->GetActualTime_ms() + 2200;
 +            automaticSwitchCandidate = 0;
 +          }
          }
@@ -54,17 +54,18 @@ diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
 -        GetTeamPossessionAmount() > 1.3f) SelectPlayer(designatedTeamPossessionPlayer);
 -  }
 -*/
-+  // Follow the likely receiver or defender only after the target remains stable. A recent
-+  // manual selection or pass target keeps priority so the cursor does not jump.
++  // FC-style assisted switching: keep the cursor during ordinary defending.
++  // Only consider an uncontested loose ball when another player is clearly quicker.
 +  Player *candidate = 0;
-+  if (match->IsInPlay() && !match->IsInSetPiece() && !humanGamers.empty()) {
++  if (match->IsInPlay() && !match->IsInSetPiece() && !humanGamers.empty() &&
++      !match->GetTeam(abs(GetID() - 1))->HasPossession() && !HasPossession()) {
 +    Player *nearest = GetBestPossessionPlayer();
 +    if (nearest && nearest != GetGoalie() && nearest->IsActive() &&
-+        nearest->GetTimeNeededToGetToBall_ms() < 2500 &&
++        nearest->GetTimeNeededToGetToBall_ms() < 1400 &&
 +        !IsHumanControlled(nearest->GetID())) {
 +      Player *selected = humanGamers.at(*switchPriority.begin())->GetSelectedPlayer();
 +      if (!selected || !selected->IsActive() ||
-+          selected->GetTimeNeededToGetToBall_ms() > nearest->GetTimeNeededToGetToBall_ms() + 600)
++          selected->GetTimeNeededToGetToBall_ms() > nearest->GetTimeNeededToGetToBall_ms() + 900)
 +        candidate = nearest;
 +    }
 +  }
@@ -72,7 +73,7 @@ diff --git a/src/onthepitch/team.cpp b/src/onthepitch/team.cpp
 +    automaticSwitchCandidate = candidate;
 +    automaticSwitchCandidateSince_ms = match->GetActualTime_ms();
 +  } else if (candidate &&
-+             match->GetActualTime_ms() >= automaticSwitchCandidateSince_ms + 250 &&
++             match->GetActualTime_ms() >= automaticSwitchCandidateSince_ms + 500 &&
 +             match->GetActualTime_ms() >= manualSwitchHoldUntil_ms &&
 +             match->GetActualTime_ms() >= automaticSwitchHoldUntil_ms) {
 +    SelectPlayer(candidate);
