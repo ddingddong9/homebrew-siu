@@ -1,6 +1,18 @@
 # siu
 
-> GameplayFootball 3D LAN 작업은 이 저장소의 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에서 진행 중입니다. 새 `SIU Football.app`은 빨강/파랑 SIU 로비에서 방 생성·검색·승인 후 GameplayFootball 경기를 엽니다. 아래 설명은 기존 Swift 11대11 베타 앱에 관한 내용입니다. 새 앱의 빌드와 미완성 범위는 [GameplayFootball 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 보세요.
+> GameplayFootball 3D LAN 작업은 이 저장소의 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에서 진행 중입니다. 새 `SIU Football.app`은 빨강/파랑 SIU 로비에서 방 생성·검색·승인 후 GameplayFootball 경기를 엽니다. 기존 Swift 앱 `SIU.app`과 별도로 설치됩니다. 새 앱의 빌드와 미완성 범위는 [GameplayFootball 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 보세요.
+
+## GameplayFootball 테스트 앱 설치 (macOS 26, Apple Silicon)
+
+두 Mac에서 각각 다음 명령을 실행하면 응용 프로그램에 **SIU Football.app**이 설치됩니다.
+
+```bash
+brew install --cask ddingddong9/siu/siu-football-beta
+```
+
+응용 프로그램에서 **SIU Football**을 열고, 한쪽은 **방 만들기**, 다른 쪽은 **방 검색 → 참가**를 누릅니다. 방장이 참가를 승인하고 경기를 시작합니다. 두 Mac을 같은 Wi-Fi에 연결하고 로컬 네트워크 접근을 허용하세요. 이 앱은 아직 두 Mac 간 경기 동기화를 실기기로 검증하지 않은 테스트판입니다. Apple 공증 전이므로 macOS가 첫 실행을 막으면 **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**에서 허용해야 할 수 있습니다.
+
+아래 설명은 기존 Swift 베타 앱 **SIU.app**에 관한 내용입니다.
 
 두 사람이 각각 11명 팀을 조작하는 macOS 아케이드 축구 게임입니다. 1.12 베타부터 앱을 열면 **11대11 홈 화면**이 먼저 나타납니다. 기존 1대1 모드는 메뉴바에 유지됩니다.
 
