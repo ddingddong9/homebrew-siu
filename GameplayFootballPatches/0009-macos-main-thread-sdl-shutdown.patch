@@ -1,0 +1,29 @@
+diff --git a/src/blunted.cpp b/src/blunted.cpp
+--- a/src/blunted.cpp
++++ b/src/blunted.cpp
+@@ -193,8 +193,12 @@
+     EnvironmentManager::GetInstance().Pause_ms(1000);
+     EnvironmentManager::GetInstance().Destroy();
+ 
++#ifdef __APPLE__
++    // IOHIDManager was initialized on this worker thread.
++    SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
++#else
+     TTF_Quit();
+     SDL_Quit();
++#endif
+ 
+     LogClose();
+   }
+diff --git a/src/main.cpp b/src/main.cpp
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -544,6 +544,8 @@
+   (*renderer)();
+   blunted::NotifyMainThreadRendererStopped();
+   gameThread.join();
++  // Cocoa teardown must happen on the same main thread as SDL video setup.
++  TTF_Quit();
+   SDL_Quit();
+   return gameResult;
+ #else

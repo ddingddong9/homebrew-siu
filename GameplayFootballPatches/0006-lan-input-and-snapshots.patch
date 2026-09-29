@@ -59,7 +59,7 @@ diff --git a/src/menu/menutask.cpp b/src/menu/menutask.cpp
 +        side.side = i == 0 ? -1 : (i == 1 ? 1 : 0);
 +      } else if (siu::Session().mode() == siu::LanMode::client) {
 +        side.side = i == 0 ? 1 : 0;
-+      } else if ((size > 1 && i == 1) || (size == 1 && i == 0)) {
++      } else if (i == 0) {
          side.side = -1;
        } else {
          side.side = 0;

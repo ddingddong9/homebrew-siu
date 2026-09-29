@@ -1,0 +1,55 @@
+diff --git a/src/systems/graphics/rendering/opengl_renderer3d.cpp b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+--- a/src/systems/graphics/rendering/opengl_renderer3d.cpp
++++ b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+@@ -27,6 +27,9 @@
+ #endif
+ 
+ #include <cmath>
++#include <cstdlib>
++#include <fstream>
++#include <vector>
+ #include <SDL2/SDL.h>
+ 
+ #include "base/log.hpp"
+@@ -71,7 +74,41 @@
+   };
+ 
+   void OpenGLRenderer3D::SwapBuffers() {
++    // Optional framebuffer capture and clean-exit smoke test for macOS.
++    static const char *capturePath = std::getenv("SIU_CAPTURE_PATH");
++    static int captureFrame = [] {
++      const char *value = std::getenv("SIU_CAPTURE_FRAME");
++      return value ? std::max(1, std::atoi(value)) : 120;
++    }();
++    static int autoQuitFrame = [] {
++      const char *value = std::getenv("SIU_AUTO_QUIT_FRAME");
++      return value ? std::max(1, std::atoi(value)) : 0;
++    }();
++    static int frame = 0;
++    ++frame;
++    if (capturePath && frame == captureFrame) {
++      int width = 0, height = 0;
++      SDL_GL_GetDrawableSize(window, &width, &height);
++      if (width > 0 && height > 0 && width <= 4096 && height <= 4096) {
++        std::vector<unsigned char> pixels(size_t(width) * size_t(height) * 3);
++        mapping.glPixelStorei(GL_PACK_ALIGNMENT, 1);
++        mapping.glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
++        std::ofstream image(capturePath, std::ios::binary);
++        if (image) {
++          image << "P6\n" << width << " " << height << "\n255\n";
++          for (int row = height - 1; row >= 0; --row)
++            image.write(reinterpret_cast<const char *>(pixels.data() + size_t(row) * size_t(width) * 3), size_t(width) * 3);
++          image.flush();
++          Log(e_Notice, "SIU", "frame capture", std::string("Saved ") + capturePath);
++        }
++      }
++    }
+     SDL_GL_SwapWindow(window);
++    if (autoQuitFrame && frame == autoQuitFrame) {
++      SDL_Event quit{};
++      quit.type = SDL_QUIT;
++      SDL_PushEvent(&quit);
++    }
+   }
+ 
+   void OpenGLRenderer3D::SetMatrix(const std::string &shaderUniformName, const Matrix4 &matrix) {
