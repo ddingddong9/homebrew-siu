@@ -1,0 +1,11 @@
+diff --git a/src/systems/graphics/rendering/opengl_renderer3d.cpp b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+--- a/src/systems/graphics/rendering/opengl_renderer3d.cpp
++++ b/src/systems/graphics/rendering/opengl_renderer3d.cpp
+@@ -426,4 +426,7 @@ bool OpenGLRenderer3D::CreateContext(int width, int height, int bpp, bool fullscreen) {
+       Log(e_FatalError, "OpenGLRenderer3D", "CreateContext", "SDL window creation failed: " + std::string(SDL_GetError()));
+       return false;
+     }
++    // The lobby starts this executable as a child. Ask Cocoa to focus the
++    // new match window so SDL receives keyboard events immediately.
++    SDL_RaiseWindow(window);
+     context = SDL_GL_CreateContext(window);

@@ -1,6 +1,6 @@
 cask "siu-football-beta" do
   version "0.1.0-beta.1"
-  sha256 "04aefbd6677e41ef98759b3fa36bf7fc9601decb3b40eb3234ac50fd3c2254eb"
+  sha256 "9dd56ae571a028cb67e2fe16938f505e167340c6b9a902be7cc6a473c8b176d7"
 
   url "https://github.com/ddingddong9/homebrew-siu/releases/download/gameplayfootball-lan-test-20260929/SIU-Football-macos26-arm64-test.zip"
   name "SIU Football"

@@ -200,6 +200,15 @@ final class FootballLobbyWindowController: NSWindowController, NSWindowDelegate 
             try process.run()
             game = process
             window?.orderOut(nil)
+            // The SDL match is a separate process. Without making it active,
+            // macOS can keep keyboard focus on the hidden lobby window.
+            NSRunningApplication(processIdentifier: process.processIdentifier)?
+                .activate(options: [.activateAllWindows])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                guard self.game === process else { return }
+                NSRunningApplication(processIdentifier: process.processIdentifier)?
+                    .activate(options: [.activateAllWindows])
+            }
             return true
         } catch {
             try? FileManager.default.removeItem(at: configURL)

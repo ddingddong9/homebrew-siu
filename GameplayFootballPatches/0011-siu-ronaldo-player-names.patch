@@ -1,0 +1,13 @@
+diff --git a/src/data/playerdata.cpp b/src/data/playerdata.cpp
+--- a/src/data/playerdata.cpp
++++ b/src/data/playerdata.cpp
+@@ -50,5 +50,9 @@ PlayerData::PlayerData(int playerDatabaseID) : databaseID(playerDatabaseID) {
+ 
+   delete result;
+ 
++  // The SIU exhibition squads share one visible player identity.
++  firstName.clear();
++  lastName = "Ronaldo";
++
+   std::vector<std::string> roleStrings;
+   tokenize(roleString, roleStrings);

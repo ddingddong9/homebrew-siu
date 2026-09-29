@@ -60,7 +60,12 @@ def main():
     if not (source / "Contents/MacOS/siu").is_file():
         parser.error("source is missing the lobby executable")
 
-    roots = [source / "Contents/MacOS/gameplayfootball", source / "Contents/MacOS/siu"]
+    # sdl2-compat loads SDL3 with dlopen(), so otool cannot discover it.
+    # Keep its expected filename next to sdl2-compat in Frameworks.
+    sdl3 = pathlib.Path("/opt/homebrew/lib/libSDL3.dylib").resolve()
+    if not sdl3.is_file():
+        parser.error("SDL3 is required to package sdl2-compat")
+    roots = [source / "Contents/MacOS/gameplayfootball", source / "Contents/MacOS/siu", sdl3]
     queued = collections.deque(roots)
     graph = {}
     while queued:
@@ -79,6 +84,11 @@ def main():
         staging = pathlib.Path(temporary)
         app = staging / "SIU Football.app"
         shutil.copytree(source, app)
+        # The development app may carry quarantine from an earlier local
+        # download. Do not seal those stale attributes into the release ZIP.
+        for attribute in ("com.apple.quarantine", "com.apple.provenance"):
+            subprocess.run(["xattr", "-dr", attribute, str(app)],
+                           capture_output=True, text=True)
         # The development-only shell launcher is not used by this app and
         # cannot be sealed as a Mach-O code object inside Contents/MacOS.
         (app / "Contents/MacOS/launch-gameplayfootball").unlink(missing_ok=True)
@@ -87,7 +97,9 @@ def main():
         destinations = {
             roots[0].resolve(): app / "Contents/MacOS/gameplayfootball",
             roots[1].resolve(): app / "Contents/MacOS/siu",
+            roots[2].resolve(): frameworks / "libSDL3.dylib",
         }
+        shutil.copy2(sdl3, destinations[sdl3])
         libraries = [origin for origin in graph if origin not in destinations]
         for origin in libraries:
             destination = frameworks / bundle_name(origin)
@@ -96,7 +108,7 @@ def main():
 
         for origin, edges in graph.items():
             destination = destinations[origin]
-            if origin in libraries:
+            if origin in libraries or origin == sdl3:
                 subprocess.run(["install_name_tool", "-id",
                                 "@rpath/" + destination.name, str(destination)],
                                check=True, capture_output=True, text=True)
@@ -114,12 +126,12 @@ def main():
 
         manifest = ["SIU Football macOS 26 Apple Silicon LAN test build", "",
                     "Bundled Homebrew binary dependencies:"]
-        for origin in sorted(libraries):
+        for origin in sorted([*libraries, sdl3]):
             manifest.append(f"{bundle_name(origin)} <- {origin}")
         (app / "Contents/Resources/BUNDLED-LIBRARIES.txt").write_text("\n".join(manifest) + "\n")
         license_dir = app / "Contents/Resources/ThirdPartyLicenses"
         fallback_dir = pathlib.Path(__file__).resolve().parent.parent / "Licenses/GameplayFootball"
-        formula_roots = sorted({origin.parents[1] for origin in libraries})
+        formula_roots = sorted({origin.parents[1] for origin in [*libraries, sdl3]})
         for formula_root in formula_roots:
             formula_name = formula_root.parent.name
             installed_notices = [path for path in formula_root.rglob("*")
@@ -154,6 +166,7 @@ def main():
 
         output = args.output.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
+        output.unlink(missing_ok=True)
         subprocess.check_call(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent",
                                str(app), str(output)])
         print(f"Portable test app: {output}")
