@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.12.2</string>
+    <string>1.13.0</string>
     <key>SIUReleaseVersion</key>
-    <string>1.12.2-beta.2</string>
+    <string>1.13.0-beta.1</string>
     <key>SIUShowHome</key>
     <true/>
     <key>CFBundleVersion</key>

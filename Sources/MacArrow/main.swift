@@ -234,7 +234,28 @@ case "asset-check":
           bitmap.pixelsWide == 1448, bitmap.pixelsHigh == 1086 else {
         fputs("Missing or invalid keeper/throw-in atlas.\n", stderr); exit(1)
     }
-    print("44 transparent character frames, blue team sprite and keeper/throw-in atlas OK")
+    for move in SpecialMove.allCases {
+        for index in 1...move.frameCount {
+            let filename = String(format: "%@-%02d", move.rawValue, index)
+            guard let url = ResourceBundle.images.url(forResource: filename, withExtension: "png"),
+                  let bitmap = NSBitmapImageRep(data: try Data(contentsOf: url)), bitmap.hasAlpha else {
+                fputs("Missing special-move cutout: \(filename).png\n", stderr); exit(1)
+            }
+            var opaque = 0, transparent = 0
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+                for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                    let alpha = bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0
+                    if alpha > 0.5 { opaque += 1 }
+                    if alpha < 0.01 { transparent += 1 }
+                }
+            }
+            guard opaque > 30, transparent > opaque else {
+                fputs("Empty or uncut special-move frame: \(filename).png\n", stderr); exit(1)
+            }
+        }
+    }
+    let specialCount = SpecialMove.allCases.reduce(0) { $0 + $1.frameCount }
+    print("44 transparent character frames, \(specialCount) special-move cutouts, blue team sprite and keeper/throw-in atlas OK")
 
 case "--help", "-h", "help":
     usage()

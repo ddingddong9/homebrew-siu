@@ -126,8 +126,36 @@ enum SelfTest {
         check(!ArenaPhysics.capture(&lofted, by: .right,
                                     player: CGPoint(x: lofted.x, y: lofted.y)),
               "airborne ball cannot be stolen")
-        for _ in 0..<40 { _ = ArenaPhysics.step(&lofted, dt: 1.0 / 60) }
+        for _ in 0..<100 { _ = ArenaPhysics.step(&lofted, dt: 1.0 / 60) }
         check(lofted.z == 0 && lofted.vz == 0, "rainbow lands")
+        var landing = ArenaBall(x: 0.5, y: 0.5, vx: 0.3, vy: 0, z: 0.001, vz: -0.5)
+        _ = ArenaPhysics.step(&landing, dt: 1.0 / 60)
+        check(landing.z == 0 && landing.vz > 0 && landing.vz < 0.2 && landing.vx < 0.3,
+              "landing produces a small damped bounce")
+        var heel = ArenaBall(x: 0.53, y: 0.5)
+        check(ArenaPhysics.backheel(&heel, from: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0)) &&
+              heel.vx < 0 && heel.carrier == nil && heel.vz > 0, "backheel reverses facing and lifts slightly")
+        check(!ArenaPhysics.backheel(&heel, from: CGPoint(x: 0.1, y: 0.1), direction: CGPoint(x: 1, y: 0)),
+              "backheel rejects distant ball")
+        for _ in 0..<24 {
+            _ = ArenaPhysics.step(&heel, dt: 1.0 / 60)
+            _ = ArenaPhysics.contact(&heel, player: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0))
+        }
+        check(heel.vx < 0 && heel.x < 0.4, "backheel does not rebound off its own shooter")
+        var footwork = ArenaBall(x: 0.52, y: 0.5)
+        _ = ArenaPhysics.capture(&footwork, by: .left, player: CGPoint(x: 0.5, y: 0.5))
+        ArenaPhysics.carry(&footwork, beside: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0), stepoverProgress: 0.08)
+        let feintY = footwork.y
+        ArenaPhysics.carry(&footwork, beside: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0), stepoverProgress: 0.25)
+        check(abs(footwork.y - feintY) > 0.02 && footwork.carrier == .left, "stepover feints while retaining possession")
+        let stillX = footwork.x
+        ArenaPhysics.carry(&footwork, beside: CGPoint(x: 0.51, y: 0.5), direction: CGPoint(x: 1, y: 0))
+        check(footwork.dribblePhase > 0 && footwork.x - 0.51 > stillX - 0.5, "dribble toe touches depend on movement")
+        for move in SpecialMove.allCases {
+            check(move.frameIndex(at: 0) == 0 && move.frameIndex(at: move.duration - 0.001) == move.frameCount - 1 &&
+                  move.frameIndex(at: move.duration) == nil && move.frameIndex(at: -.infinity) == nil,
+                  "\(move.rawValue) animation frame boundaries")
+        }
         var bending = ArenaBall(x: 0.51, y: 0.3)
         check(ArenaPhysics.curveKick(&bending, from: CGPoint(x: 0.5, y: 0.3),
                                      direction: CGPoint(x: -1, y: 0), toward: .right) &&
@@ -224,7 +252,7 @@ enum SelfTest {
     }
 
     static func runNetwork() -> [String] {
-        let port = UInt16.random(in: 52000...62000)
+        let port = UInt16.random(in: 30000...39998)
         guard let transport = try? MatchTransport(port: port, roomKey: Data(repeating: 0xA5, count: 16)) else {
             return ["UDP listener setup"]
         }
@@ -250,7 +278,7 @@ enum SelfTest {
     }
 
     static func runPairSimulation() -> [String] {
-        let firstPort = UInt16.random(in: 52000...61998)
+        let firstPort = UInt16.random(in: 30000...39998)
         let key = Data(repeating: 0xA5, count: 16)
         guard let a = try? MatchTransport(port: firstPort, remotePort: firstPort + 1, roomKey: key),
               let b = try? MatchTransport(port: firstPort + 1, remotePort: firstPort, roomKey: key) else {
@@ -271,6 +299,8 @@ enum SelfTest {
             (a, MatchMessage(kind: .rainbow, matchID: matchID, actorID: GameIdentity.localID)),
             (a, MatchMessage(kind: .phantom, matchID: matchID, y: 1,
                              actorID: GameIdentity.localID)),
+            (a, MatchMessage(kind: .stepover, matchID: matchID, actorID: GameIdentity.localID)),
+            (a, MatchMessage(kind: .backheel, matchID: matchID, actorID: GameIdentity.localID)),
             (a, MatchMessage(kind: .kickoff, matchID: matchID, duration: 2, x: 1)),
             (a, MatchMessage(kind: .fall, matchID: matchID, x: 1)),
             (a, MatchMessage(kind: .powerShot, matchID: matchID, actorID: GameIdentity.localID)),
@@ -279,6 +309,8 @@ enum SelfTest {
             (b, MatchMessage(kind: .player, matchID: matchID, x: 0.7, y: 0.5, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .kick, matchID: matchID, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .marseille, matchID: matchID)),
+            (b, MatchMessage(kind: .stepover, matchID: matchID)),
+            (b, MatchMessage(kind: .backheel, matchID: matchID)),
             (b, MatchMessage(kind: .curveShot, matchID: matchID, vx: -1, vy: 0)),
             (b, MatchMessage(kind: .stop, matchID: matchID))
         ]
@@ -288,22 +320,22 @@ enum SelfTest {
             }
         }
         let deadline = Date().addingTimeInterval(4)
-        while (seenByA.count < 5 || seenByB.count < 10 || acknowledged < 15) && Date() < deadline {
+        while (seenByA.count < 7 || seenByB.count < 12 || acknowledged < packets.count) && Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
         a.stop(); b.stop()
         var failures: [String] = []
-        if seenByA != Set([.player, .kick, .marseille, .curveShot, .stop]) { failures.append("peer A events") }
+        if seenByA != Set([.player, .kick, .marseille, .curveShot, .stepover, .backheel, .stop]) { failures.append("peer A events") }
         if seenByB != Set([.start, .ball, .kickoff, .fall, .powerShot, .marseille,
-                           .rainbow, .phantom, .pause, .resume]) {
+                           .rainbow, .phantom, .stepover, .backheel, .pause, .resume]) {
             failures.append("peer B events")
         }
-        if acknowledged != 15 { failures.append("two-peer acknowledgements") }
+        if acknowledged != packets.count { failures.append("two-peer acknowledgements") }
         return failures
     }
 
     static func runWrongRoomSimulation() -> [String] {
-        let port = UInt16.random(in: 52000...62000)
+        let port = UInt16.random(in: 30000...39998)
         guard let sender = try? MatchTransport(port: port + 1, remotePort: port,
                                                roomKey: Data(repeating: 0xA5, count: 16)),
               let receiver = try? MatchTransport(port: port, remotePort: port + 1,
@@ -328,7 +360,7 @@ enum SelfTest {
     }
 
     static func runRoomJoinSimulation() -> [String] {
-        let guestPort = UInt16.random(in: 52000...61998)
+        let guestPort = UInt16.random(in: 30000...39998)
         let hostPort = guestPort + 1
         guard let host = try? MatchTransport(port: hostPort, remotePort: guestPort,
                                              roomKey: Data(repeating: 0xA5, count: 16)),
@@ -362,7 +394,8 @@ enum SelfTest {
     }
 
     static func runBonjourRoomSimulation() -> [String] {
-        let guestPort = UInt16.random(in: 52000...61998)
+        // Avoid macOS's ephemeral outbound range (49152+) during concurrent UDP tests.
+        let guestPort = UInt16.random(in: 30000...39998)
         let key = RoomSecretStore.freshKey()
         guard let host = try? MatchTransport(port: guestPort + 1, remotePort: guestPort,
                                              roomKey: key),
@@ -390,7 +423,7 @@ enum SelfTest {
     }
 
     static func runRoomRejectionSimulation() -> [String] {
-        let port = UInt16.random(in: 52000...62000)
+        let port = UInt16.random(in: 30000...39998)
         guard let host = try? MatchTransport(port: port, roomKey: RoomSecretStore.freshKey()),
               let guest = try? MatchTransport(port: port + 1, remotePort: port,
                                               roomKey: RoomSecretStore.freshKey()) else {

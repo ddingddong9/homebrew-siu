@@ -10,4 +10,8 @@ The movement sprites (`move-frames` and `run-frames`) and tackle sprites (`tackl
 
 Additional generated strips cover front/back running, front/side shooting, and front/back tackling. Those strips were also segmented and trimmed into transparent per-frame PNGs. The game now bundles 44 character frames in total and chooses an action set based on the nearest of eight visual directions; only the original back-view shot uses the user-supplied GIF.
 
-These are local development assets. The source GIF's distribution rights have not been verified; do not publish a binary or Homebrew release containing its kick frames until that is resolved. The generated poses also approximate the player and should be reviewed before distribution.
+The source footage's distribution rights were previously unverified. On 2026-09-30,
+the user was explicitly asked about public Homebrew distribution and the existing
+footage warning, confirmed usage/distribution rights, and authorized publication.
+This records that confirmation, not an independent rights audit. The generated
+poses still approximate the player and should be reviewed before distribution.

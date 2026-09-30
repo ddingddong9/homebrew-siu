@@ -44,6 +44,7 @@ final class MatchCoordinator {
     private var lastTurnAt: TimeInterval = 0
     private var lastRainbowAt: TimeInterval = 0
     private var lastPhantomAt: TimeInterval = 0
+    private var lastSpecialAt: [FieldEdge: TimeInterval] = [:]
     private var seenMessageIDs = Set<UUID>()
     private var roomPeerEndpoint: NWEndpoint?
 
@@ -57,6 +58,8 @@ final class MatchCoordinator {
         arena.onMarseille = { [weak self] in self?.marseille() }
         arena.onRainbow = { [weak self] in self?.rainbow() }
         arena.onPhantom = { [weak self] vertical in self?.phantom(vertical: vertical) }
+        arena.onStepover = { [weak self] in self?.special(.stepover) }
+        arena.onBackheel = { [weak self] in self?.special(.backheel) }
         arena.onCurveShot = { [weak self] position, direction in
             self?.kick(from: position, direction: direction, curved: true)
         }
@@ -162,6 +165,8 @@ final class MatchCoordinator {
             remoteDirection = CGPoint(x: 1, y: 0)
             arena.setFireBall(false)
             arena.resetForKickoff(conceding: conceding)
+            arena.animateSpecial(.celebration, local: conceding == .left,
+                                 elapsed: max(0, Date().timeIntervalSince(message.sentAt)))
         case .powerShot:
             guard message.matchID == matchID, pausedAt == nil else { return }
             if isHost {
@@ -202,6 +207,16 @@ final class MatchCoordinator {
             guard message.matchID == matchID, message.sentAt > latestRemoteControlAt else { return }
             latestRemoteControlAt = message.sentAt
             pause(notifyPeer: false)
+        case .stepover, .backheel:
+            guard message.matchID == matchID, pausedAt == nil, message.sentAt >= latestKickoffAt else { return }
+            let move: SpecialMove = message.kind == .stepover ? .stepover : .backheel
+            if isHost {
+                guard message.actorID == nil, ProcessInfo.processInfo.systemUptime - remoteSeenAt < 1 else { return }
+                beginSpecial(move, side: .right, actorID: message.senderID)
+            } else if let actor = message.actorID {
+                arena.animateSpecial(move, local: actor == GameIdentity.localID,
+                                     elapsed: max(0, Date().timeIntervalSince(message.sentAt)))
+            }
         case .resume:
             guard message.matchID == matchID, message.sentAt > latestRemoteControlAt else { return }
             latestRemoteControlAt = message.sentAt
@@ -215,9 +230,13 @@ final class MatchCoordinator {
             guard let z = message.z, let vz = message.vz, let curve = message.curve,
                   z.isFinite, vz.isFinite, curve.isFinite,
                   (0...0.5).contains(z), abs(vz) <= 2, abs(curve) <= 3 else { return }
+            guard let dribblePhase = message.dribblePhase, dribblePhase.isFinite,
+                  (0...(2 * .pi)).contains(dribblePhase) else { return }
             latestBallAt = message.sentAt
             ball = ArenaBall(x: x, y: y, vx: vx, vy: vy,
                              carrier: side(from: message.possession), z: z, vz: vz, curve: curve)
+            ball.dribblePhase = dribblePhase
+            ball.lastCarryPosition = ball.carrier == .right ? arena.localPosition : arena.remotePosition
         case .sync:
             guard !isHost, message.matchID == matchID, let scores = message.scores,
                   let left = scores["left"], let right = scores["right"],
@@ -278,6 +297,7 @@ final class MatchCoordinator {
         lastTurnAt = 0
         lastRainbowAt = 0
         lastPhantomAt = 0
+        lastSpecialAt.removeAll()
         arena.show(homeSide: host ? .left : .right)
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -337,7 +357,8 @@ final class MatchCoordinator {
                     let position = carrier == .left ? arena.localPosition : remotePlayer
                     let direction = carrier == .left ? arena.localDirection : remoteDirection
                     ArenaPhysics.carry(&ball, beside: position, direction: direction,
-                                       turnProgress: arena.marseilleProgress(side: carrier))
+                                       turnProgress: arena.marseilleProgress(side: carrier),
+                                       stepoverProgress: arena.specialProgress(side: carrier, move: .stepover))
                 }
                 switch ArenaPhysics.step(&ball, dt: dt) {
                 case .inPlay:
@@ -356,7 +377,8 @@ final class MatchCoordinator {
                 send(MatchMessage(kind: .ball, matchID: id, x: ball.x, y: ball.y,
                                   vx: ball.vx, vy: ball.vy, z: ball.z, vz: ball.vz,
                                   curve: ball.curve,
-                                  possession: ball.carrier.map { $0 == .left ? 0 : 1 } ?? 2))
+                                  possession: ball.carrier.map { $0 == .left ? 0 : 1 } ?? 2,
+                                  dribblePhase: ball.dribblePhase))
             }
             if now - lastSyncSentAt >= 0.5 {
                 lastSyncSentAt = now
@@ -368,7 +390,8 @@ final class MatchCoordinator {
                 let position = carrier == localSide ? arena.localPosition : arena.remotePosition
                 let direction = carrier == localSide ? arena.localDirection : remoteDirection
                 ArenaPhysics.carry(&ball, beside: position, direction: direction,
-                                   turnProgress: arena.marseilleProgress(side: carrier))
+                                   turnProgress: arena.marseilleProgress(side: carrier),
+                                   stepoverProgress: arena.specialProgress(side: carrier, move: .stepover))
             }
             _ = ArenaPhysics.step(&ball, dt: dt) // Visual prediction between host snapshots.
         }
@@ -390,16 +413,18 @@ final class MatchCoordinator {
     private func scored(at now: TimeInterval, conceding side: FieldEdge) {
         ball = .kickoff
         kickoffOwner = side
-        kickoffAt = now + 2
-        goalNoticeUntil = now + 2
+        let celebrationTime = SpecialMove.celebration.duration + 0.2
+        kickoffAt = now + celebrationTime
+        goalNoticeUntil = kickoffAt
         fireUntil = 0
         leftFallenUntil = 0
         rightFallenUntil = 0
         arena.setFireBall(false)
         arena.resetForKickoff(conceding: side)
+        arena.animateSpecial(.celebration, local: side == .right)
         if let id = matchID {
             send(MatchMessage(kind: .kickoff, matchID: id,
-                              duration: 2, x: side == .left ? 0 : 1))
+                              duration: celebrationTime, x: side == .left ? 0 : 1))
         }
         sendScore(goal: true)
     }
@@ -507,6 +532,7 @@ final class MatchCoordinator {
     private func canAct(side: FieldEdge) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         return pausedAt == nil && now >= kickoffAt && powerActorSide == nil &&
+            arena.specialProgress(side: side) == nil &&
             arena.marseilleProgress(side: side) == nil && arena.phantomProgress(side: side) == nil &&
             now >= (side == .left ? leftFallenUntil : rightFallenUntil)
     }
@@ -515,6 +541,39 @@ final class MatchCoordinator {
         if value == 0 { return .left }
         if value == 1 { return .right }
         return nil
+    }
+
+    private func special(_ move: SpecialMove) {
+        guard let id = matchID else { return }
+        let side: FieldEdge = isHost ? .left : .right
+        guard canAct(side: side), ArenaPhysics.mayTakeKickoff(owner: kickoffOwner, player: side) else { return }
+        if move == .stepover && ball.carrier != side {
+            arena.showFeedback("공을 소유해야 발재간을 할 수 있어요"); return
+        }
+        if move == .backheel && (ball.z >= 0.03 || hypot(ball.x-arena.localPosition.x, ball.y-arena.localPosition.y) >= 0.075) {
+            arena.showFeedback("공에 가까이 가서 Q를 누르세요"); return
+        }
+        if isHost { beginSpecial(move, side: side, actorID: GameIdentity.localID) }
+        else { send(MatchMessage(kind: move == .stepover ? .stepover : .backheel, matchID: id)) }
+    }
+
+    private func beginSpecial(_ move: SpecialMove, side: FieldEdge, actorID: UUID) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard isHost, let id = matchID, move != .celebration, canAct(side: side),
+              ArenaPhysics.mayTakeKickoff(owner: kickoffOwner, player: side),
+              now - (lastSpecialAt[side] ?? -.infinity) >= move.duration + 0.3 else { return }
+        if move == .stepover {
+            guard ball.carrier == side else { return }
+        } else {
+            let position = side == .left ? arena.localPosition : remotePlayer
+            let direction = side == .left ? arena.localDirection : remoteDirection
+            guard ArenaPhysics.backheel(&ball, from: position, direction: direction) else { return }
+            kickoffOwner = nil
+            sendScore(goal: false)
+        }
+        lastSpecialAt[side] = now
+        arena.animateSpecial(move, local: side == .left)
+        send(MatchMessage(kind: move == .stepover ? .stepover : .backheel, matchID: id, actorID: actorID))
     }
 
     private func marseille() {
@@ -649,6 +708,7 @@ final class MatchCoordinator {
         if lastTurnAt > 0 { lastTurnAt += elapsed }
         if lastRainbowAt > 0 { lastRainbowAt += elapsed }
         if lastPhantomAt > 0 { lastPhantomAt += elapsed }
+        for side in Array(lastSpecialAt.keys) { lastSpecialAt[side]? += elapsed }
         lastTick = ProcessInfo.processInfo.systemUptime
         lastSyncSentAt = 0
         arena.setPaused(false, elapsed: elapsed)

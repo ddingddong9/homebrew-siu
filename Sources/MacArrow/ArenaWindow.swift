@@ -9,6 +9,8 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     var onRainbow: (() -> Void)?
     var onPhantom: ((Double) -> Void)?
     var onCurveShot: ((CGPoint, CGPoint) -> Void)?
+    var onStepover: (() -> Void)?
+    var onBackheel: (() -> Void)?
     var onPauseToggle: (() -> Void)?
     var onResume: (() -> Void)?
     var onEnd: (() -> Void)?
@@ -36,6 +38,8 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
         view.onRainbow = { [weak self] in self?.onRainbow?() }
         view.onPhantom = { [weak self] vertical in self?.onPhantom?(vertical) }
         view.onCurveShot = { [weak self] position, direction in self?.onCurveShot?(position, direction) }
+        view.onStepover = { [weak self] in self?.onStepover?() }
+        view.onBackheel = { [weak self] in self?.onBackheel?() }
         view.onPauseToggle = { [weak self] in self?.onPauseToggle?() }
     }
 
@@ -73,6 +77,8 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     func startPhantom(local: Bool, vertical: Double) { arenaView.startPhantom(local: local, vertical: vertical) }
     func phantomProgress(side: FieldEdge) -> Double? { arenaView.phantomProgress(side: side) }
     func animateRainbow(local: Bool) { arenaView.animateRainbow(local: local) }
+    func animateSpecial(_ move: SpecialMove, local: Bool, elapsed: TimeInterval = 0) { arenaView.animateSpecial(move, local: local, elapsed: elapsed) }
+    func specialProgress(side: FieldEdge, move: SpecialMove? = nil) -> Double? { arenaView.specialProgress(side: side, move: move) }
     func setFireBall(_ active: Bool) { arenaView.fireBall = active; arenaView.needsDisplay = true }
     func animateRemoteKick() { arenaView.remoteKickAt = ProcessInfo.processInfo.systemUptime }
     func animateRemoteTackle() { arenaView.remoteTackleAt = ProcessInfo.processInfo.systemUptime }
@@ -142,7 +148,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     @objc private func endPressed() { onEnd?() }
     func render(ball: ArenaBall, myScore: Int, theirScore: Int,
                 remaining: TimeInterval, status: String) {
-        arenaView.ball = ball
+        arenaView.updateBall(ball)
         arenaView.myScore = myScore
         arenaView.theirScore = theirScore
         arenaView.remaining = remaining
@@ -160,6 +166,8 @@ private final class ArenaView: NSView {
     var onRainbow: (() -> Void)?
     var onPhantom: ((Double) -> Void)?
     var onCurveShot: ((CGPoint, CGPoint) -> Void)?
+    var onStepover: (() -> Void)?
+    var onBackheel: (() -> Void)?
     var onPauseToggle: (() -> Void)?
     var localPosition = CGPoint(x: 0.25, y: 0.5)
     var remotePosition = CGPoint(x: 0.75, y: 0.5)
@@ -202,6 +210,12 @@ private final class ArenaView: NSView {
     private var tackleAt: TimeInterval = -.infinity
     private var feedback = ""
     private var feedbackUntil: TimeInterval = 0
+    private struct PlayingMove { var move: SpecialMove; var startedAt: TimeInterval }
+    private var specialMoves: [Bool: PlayingMove] = [:]
+    private let specialAnimations = Dictionary(uniqueKeysWithValues: SpecialMove.allCases.map { ($0, SpecialMoveAnimation($0)) })
+    private var ballRotation: CGFloat = 0
+    private var ballTrail: [(CGPoint, CGFloat)] = []
+    private var bounceAt: TimeInterval = -.infinity
     private let sprites: [NSImage] = (1...4).compactMap { index in
         guard let url = ResourceBundle.images.url(forResource: String(format: "move-%02d", index), withExtension: "png") else { return nil }
         return NSImage(contentsOf: url)
@@ -228,6 +242,10 @@ private final class ArenaView: NSView {
     }
 
     func resetForKickoff(conceding side: FieldEdge) {
+        specialMoves.removeAll()
+        ballTrail.removeAll()
+        ballRotation = 0
+        bounceAt = -.infinity
         let positions = ArenaPhysics.startingX(conceding: side)
         localPosition = CGPoint(x: homeSide == .left ? positions.left : positions.right, y: 0.5)
         remotePosition = CGPoint(x: homeSide == .left ? positions.right : positions.left, y: 0.5)
@@ -295,8 +313,35 @@ private final class ArenaView: NSView {
         needsDisplay = true
     }
 
+    func animateSpecial(_ move: SpecialMove, local: Bool, elapsed: TimeInterval = 0) {
+        specialMoves[local] = PlayingMove(move: move, startedAt: ProcessInfo.processInfo.systemUptime - max(0, elapsed))
+        if local { velocity = .zero; keys.removeAll() }
+        needsDisplay = true
+    }
+
+    func specialProgress(side: FieldEdge, move: SpecialMove? = nil) -> Double? {
+        guard let state = specialMoves[side == homeSide], move == nil || state.move == move else { return nil }
+        let elapsed = visualNow - state.startedAt
+        return (0..<state.move.duration).contains(elapsed) ? elapsed / state.move.duration : nil
+    }
+
+    func updateBall(_ newBall: ArenaBall) {
+        let distance = hypot(newBall.x - ball.x, newBall.y - ball.y)
+        if !paused, distance > 0.0001 {
+            if distance < 0.15 {
+                ballRotation += CGFloat(distance) * bounds.width / 12
+                ballTrail.append((point(newBall.x, newBall.y), CGFloat(newBall.z)))
+                if ballTrail.count > 8 { ballTrail.removeFirst() }
+            } else { ballTrail.removeAll() }
+        }
+        if !paused, ball.z > 0, newBall.z == 0, ball.vz < 0 { bounceAt = visualNow }
+        ball = newBall
+    }
+
     func setPaused(_ value: Bool, elapsed: TimeInterval) {
         if paused && !value && elapsed > 0 {
+            for key in Array(specialMoves.keys) { specialMoves[key]?.startedAt += elapsed }
+            if bounceAt.isFinite { bounceAt += elapsed }
             if stunnedUntil > 0 { stunnedUntil += elapsed }
             if remoteStunnedUntil > 0 { remoteStunnedUntil += elapsed }
             if fallStartedAt.isFinite { fallStartedAt += elapsed }
@@ -352,11 +397,12 @@ private final class ArenaView: NSView {
             keys.removeAll(); sprint = false; zHeld = false; zConsumed = false
         }
         let phantom = (0..<phantomDuration).contains(ProcessInfo.processInfo.systemUptime - localPhantomAt)
+        let activeSpecial = specialMoves[true].flatMap { specialAnimations[$0.move]?.image(at: visualNow - $0.startedAt) }
         let dx = CGFloat((keys.contains(124) ? 1 : 0) - (keys.contains(123) ? 1 : 0))
         let dy = CGFloat((keys.contains(126) ? 1 : 0) - (keys.contains(125) ? 1 : 0))
         let length = hypot(dx, dy)
         let speed: CGFloat = sprint ? 0.48 : 0.33
-        let target = phantom ? CGPoint(x: 0, y: phantomVertical * 0.72) :
+        let target = activeSpecial != nil ? .zero : phantom ? CGPoint(x: 0, y: phantomVertical * 0.72) :
             turning ? CGPoint(x: localDirection.x * 0.19, y: localDirection.y * 0.19) :
             (length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero)
         let blend = min(CGFloat(1), CGFloat(dt) * 14)
@@ -397,6 +443,8 @@ private final class ArenaView: NSView {
             onTackle?(localPosition, localDirection)
         }
         case 3: if !event.isARepeat { onPowerShot?(localPosition) }
+        case 14: if !event.isARepeat { onStepover?() } // E: SIU's extra skill binding.
+        case 12: if !event.isARepeat { onBackheel?() } // Q: backward heel shot.
         case 6: if !event.isARepeat { zHeld = true; zConsumed = false }
         case 1: if !event.isARepeat { onRainbow?() }
         case 7: if !event.isARepeat {
@@ -522,8 +570,11 @@ private final class ArenaView: NSView {
             let sinceTurn = now - (isLocal ? localTurnAt : remoteTurnAt)
             let isFalling = (0..<fallDuration).contains(sinceFall)
             let image: NSImage
+            let specialImage = specialMoves[isLocal].flatMap { specialAnimations[$0.move]?.image(at: now - $0.startedAt) }
             if isFalling {
                 image = sprites[min(2, sprites.count - 1)]
+            } else if let specialImage {
+                image = specialImage
             } else if sinceKick < 0.55, !kickSprites.isEmpty {
                 image = kickSprites[min(kickSprites.count - 1, Int(sinceKick / 0.14))]
             } else if sinceTackle < 0.50, !tackleSprites.isEmpty {
@@ -532,8 +583,8 @@ private final class ArenaView: NSView {
                 let frame = isLocal ? Int(animationPhase) % sprites.count : 2
                 image = sprites[frame]
             }
-            let height: CGFloat = 118
-            let width = min(88, height * image.size.width / max(image.size.height, 1))
+            let height: CGFloat = specialImage != nil && !isFalling ? 154 : 118
+            let width = min(specialImage != nil ? 116 : 88, height * image.size.width / max(image.size.height, 1))
             guard let context = NSGraphicsContext.current?.cgContext else { return }
             context.saveGState()
             context.translateBy(x: center.x, y: center.y - 12)
@@ -574,6 +625,15 @@ private final class ArenaView: NSView {
     private func drawBall() {
         let center = point(ball.x, ball.y)
         let lift = CGFloat(ball.z) * bounds.height * 0.72
+        let speed = hypot(ball.vx, ball.vy)
+        if effectsEnabled, ball.carrier == nil, speed > 0.4 {
+            for (index, sample) in ballTrail.enumerated() {
+                let alpha = CGFloat(index + 1) / CGFloat(max(1, ballTrail.count)) * 0.13
+                NSColor.white.withAlphaComponent(alpha).setFill()
+                let raised = sample.0.y + sample.1 * bounds.height * 0.72
+                NSBezierPath(ovalIn: NSRect(x: sample.0.x - 7, y: raised - 7, width: 14, height: 14)).fill()
+            }
+        }
         if fireBall && effectsEnabled {
             let speed = hypot(ball.vx, ball.vy)
             let ux = speed > 0.01 ? ball.vx / speed : 1
@@ -592,10 +652,40 @@ private final class ArenaView: NSView {
             NSBezierPath(ovalIn: NSRect(x: center.x - 28, y: center.y - 26,
                                         width: 56, height: 56)).fill()
         }
-        let shadow = NSBezierPath(ovalIn: NSRect(x: center.x - 18, y: center.y - 15, width: 36, height: 14))
-        NSColor.black.withAlphaComponent(0.38).setFill(); shadow.fill()
-        NSString(string: "⚽️").draw(in: NSRect(x: center.x - 22, y: center.y - 16 + lift, width: 44, height: 44),
-                                   withAttributes: [.font: NSFont.systemFont(ofSize: 34)])
+        let shadowWidth = 30 + min(24, lift * 0.15)
+        let shadow = NSBezierPath(ovalIn: NSRect(x: center.x - shadowWidth / 2, y: center.y - 10, width: shadowWidth, height: 10))
+        NSColor.black.withAlphaComponent(max(0.12, 0.36 - Double(ball.z) * 0.8)).setFill(); shadow.fill()
+        let landing = visualNow - bounceAt
+        if effectsEnabled, (0..<0.22).contains(landing) {
+            let radius = CGFloat(landing / 0.22) * 24 + 12
+            NSColor.white.withAlphaComponent(CGFloat(1 - landing / 0.22) * 0.25).setStroke()
+            NSBezierPath(ovalIn: NSRect(x: center.x-radius, y: center.y-radius/3, width:radius*2, height:radius*2/3)).stroke()
+        }
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        context.translateBy(x: center.x, y: center.y + lift + 8)
+        if (0..<0.12).contains(landing) { context.scaleBy(x: 1.12, y: 0.88) }
+        let sphere = NSBezierPath(ovalIn: NSRect(x: -12, y: -12, width: 24, height: 24))
+        sphere.addClip()
+        NSGradient(starting: .white, ending: NSColor(calibratedWhite: 0.52, alpha: 1))?.draw(in: sphere, angle: -55)
+        context.rotate(by: ballRotation)
+        for patch in 0..<6 {
+            let a = CGFloat(patch) * .pi / 3
+            let px: CGFloat = patch == 0 ? 0 : cos(a) * 13
+            let py: CGFloat = patch == 0 ? 0 : sin(a) * 13
+            let panel = NSBezierPath()
+            for corner in 0..<5 {
+                let theta = CGFloat(corner) * .pi * 2 / 5 + a
+                let p = NSPoint(x: px + cos(theta)*5, y: py + sin(theta)*5)
+                if corner == 0 { panel.move(to:p) } else { panel.line(to:p) }
+            }
+            panel.close()
+            NSColor(calibratedWhite: 0.10, alpha: 1).setFill(); panel.fill()
+            NSColor(calibratedWhite: 0.30, alpha: 1).setStroke(); panel.lineWidth = 0.5; panel.stroke()
+        }
+        context.restoreGState()
+        NSColor.white.withAlphaComponent(0.42).setFill()
+        NSBezierPath(ovalIn: NSRect(x: center.x-6, y:center.y+lift+12, width:6,height:4)).fill()
     }
 
     private func drawScoreboard() {
@@ -621,7 +711,7 @@ private final class ArenaView: NSView {
     }
 
     private func drawControls() {
-        NSString(string: "방향키 이동·방향  ·  Shift 달리기  ·  D 슛  ·  A 태클  ·  S 사포  ·  X 팬텀  ·  Z 마르세유턴").draw(
+        NSString(string: "방향키 이동 · Shift 달리기 · D 슛 · A 태클 · S 사포 · X 팬텀 · Z 턴 · E 발재간 · Q 백숏").draw(
             in: NSRect(x: 0, y: 9, width: bounds.width, height: 20),
             withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .medium),
                              .foregroundColor: NSColor.white.withAlphaComponent(0.9),

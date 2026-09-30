@@ -140,7 +140,7 @@ final class SIUHomeWindowController: NSWindowController {
     @objc private func controls() {
         let alert = NSAlert()
         alert.messageText = "SIU 1대1 조작 안내"
-        alert.informativeText = "방향키: 이동 · 방향 / Shift: 달리기\nD: 슛 / A: 태클 / S: 사포\nX: 팬텀 드리블 / Z: 마르세유턴\nEsc: 일시정지 · 화면 효과 설정 · 경기 종료\n\n친구 대전: 방 만들기 → 친구가 방 참가 → 참가 허용 → 경기 시작"
+        alert.informativeText = "방향키: 이동 · 방향 / Shift: 달리기\nD: 슛 / A: 태클 / S: 사포\nX: 팬텀 드리블 / Z: 마르세유턴\nE: 발재간 (공 소유 중) / Q: 백숏 (바라보는 방향의 반대로)\n득점 후: 호날두 세레머니 자동 재생\nE·Q는 SIU 추가 키이며 FC온라인 공식 키가 아닙니다.\nEsc: 일시정지 · 화면 효과 설정 · 경기 종료\n\n친구 대전: 방 만들기 → 친구가 방 참가 → 참가 허용 → 경기 시작"
         alert.addButton(withTitle: "확인")
         alert.runModal()
     }
