@@ -10,6 +10,8 @@ final class MenuBarController: NSObject {
     private let match: MatchCoordinator
     private var player: PlayerWindowController?
     private var preview: ArenaPreviewController?
+    private var home: SIUHomeWindowController?
+    private var homeRefreshTimer: Timer?
     private var elevenPreview: ElevenMatchWindowController?
     private var layoutEditor: LayoutEditorWindowController?
     private var connectionTimer: Timer?
@@ -56,6 +58,7 @@ final class MenuBarController: NSObject {
             self.joinRoomItem.isEnabled = !running
             self.leaveRoomItem.isEnabled = !running && self.roomMode != nil
             if running {
+                self.home?.window?.orderOut(nil)
                 self.player?.hide()
                 self.playerMenuItem.title = "연습용 선수 생성"
                 self.preview?.stop()
@@ -66,7 +69,7 @@ final class MenuBarController: NSObject {
             self.connectionTimer = running ? Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.checkPeers(showProgress: false) { _ in } }
             } : nil
-            if !running { self.presentUpdateAlertIfNeeded() }
+            if !running { self.showHome(); self.presentUpdateAlertIfNeeded() }
         }
         match.onConnectionIssue = { [weak self] message in
             self?.connectionItem.title = "연결 문제: \(message)"
@@ -133,6 +136,9 @@ final class MenuBarController: NSObject {
         menu.addItem(joinRoomItem)
         menu.addItem(leaveRoomItem)
         menu.addItem(.separator())
+        let homeItem = NSMenuItem(title: "메인 대기 화면", action: #selector(showHome), keyEquivalent: "h")
+        homeItem.target = self
+        menu.addItem(homeItem)
         playerMenuItem.target = self
         menu.addItem(playerMenuItem)
         startItem.target = self
@@ -332,6 +338,7 @@ final class MenuBarController: NSObject {
         controller.onClose = { [weak self, weak controller] in
             guard let self, let controller, self.roomBrowserWindow === controller else { return }
             self.roomBrowserWindow = nil
+            if self.roomMode == nil { self.connectionItem.title = "방: 참가할 방을 선택하세요" }
         }
         controller.show()
     }
@@ -350,15 +357,72 @@ final class MenuBarController: NSObject {
         connectionItem.title = "연결: 확인 안 됨"
     }
 
-    @objc func showPreview() {
+    @objc func showHome() {
+        guard !match.isRunning else { return }
+        preview?.stop()
         elevenPreview?.hide()
-        if preview == nil { preview = ArenaPreviewController() }
+        player?.hide()
+        if home == nil {
+            let controller = SIUHomeWindowController()
+            controller.onCreate = { [weak self] in self?.createRoom() }
+            controller.onJoin = { [weak self] in self?.joinRoom() }
+            controller.onStart = { [weak self] in self?.startMatch() }
+            controller.onPractice = { [weak self] in self?.showPreview() }
+            controller.onSettings = { [weak self] in self?.showHomeSettings() }
+            controller.onLeave = { [weak self] in self?.leaveRoom() }
+            home = controller
+            homeRefreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshHome() }
+            }
+        }
+        home?.show()
+        refreshHome()
+    }
+
+    private func refreshHome() {
+        guard home?.window?.isVisible == true else { return }
+        home?.update(status: connectionItem.title,
+                     canStart: !match.isRunning && (roomEndpoint != nil || (roomMode == nil && ScreenLayoutStore.load().screens.contains { !$0.isLocal && !$0.host.isEmpty })),
+                     inRoom: roomMode != nil && !match.isRunning)
+    }
+
+    private func showHomeSettings() {
+        let alert = NSAlert()
+        alert.messageText = "SIU 설정"
+        alert.informativeText = "화면 효과 설정은 다음 경기부터 적용됩니다.\n방 검색 대신 IP 주소로 연결하려면 ‘연결·화면 배치’를 사용하세요."
+        let effects = NSButton(checkboxWithTitle: "슛 · 개인기 화면 효과 표시", target: nil, action: nil)
+        effects.state = UserDefaults.standard.object(forKey: "SIUEffectsEnabled") as? Bool == false ? .off : .on
+        alert.accessoryView = effects
+        alert.addButton(withTitle: "저장")
+        alert.addButton(withTitle: "연결·화면 배치…")
+        alert.addButton(withTitle: "취소")
+        let result = alert.runModal()
+        if result != .alertThirdButtonReturn {
+            UserDefaults.standard.set(effects.state == .on, forKey: "SIUEffectsEnabled")
+        }
+        if result == .alertSecondButtonReturn { openLayout() }
+    }
+
+    @objc func showPreview() {
+        home?.window?.orderOut(nil)
+        elevenPreview?.hide()
+        if preview == nil {
+            preview = ArenaPreviewController()
+            preview?.onStopped = { [weak self] in
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, !self.match.isRunning, self.preview?.isRunning != true,
+                          self.elevenPreview?.isRunning != true else { return }
+                    self.showHome()
+                }
+            }
+        }
         player?.hide()
         playerMenuItem.title = "연습용 선수 생성"
         preview?.show()
     }
 
     @objc func showElevenPreview() {
+        home?.window?.orderOut(nil)
         preview?.stop()
         player?.hide()
         playerMenuItem.title = "연습용 선수 생성"

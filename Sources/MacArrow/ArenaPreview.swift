@@ -24,6 +24,7 @@ final class ArenaPreviewController {
     private var lastRainbowAt: TimeInterval = 0
     private var lastPhantomAt: TimeInterval = 0
     var isRunning: Bool { timer != nil }
+    var onStopped: (() -> Void)?
 
     init() {
         arena.onKick = { [weak self] position, direction in
@@ -142,10 +143,12 @@ final class ArenaPreviewController {
     }
 
     func stop() {
+        let wasRunning = timer != nil
         timer?.invalidate()
         timer = nil
         pausedAt = nil
         arena.hide()
+        if wasRunning { onStopped?() }
     }
 
     private func togglePause() {

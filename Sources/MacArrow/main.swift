@@ -131,7 +131,9 @@ case "start", "receive":
         }
         receiver.start()
         matchTransport.start()
-        if launchedAsApp && Bundle.main.object(forInfoDictionaryKey: "SIUShowOneOnOnePreview") as? Bool == true {
+        if launchedAsApp && Bundle.main.object(forInfoDictionaryKey: "SIUShowHome") as? Bool == true {
+            DispatchQueue.main.async { menuBar.showHome() }
+        } else if launchedAsApp && Bundle.main.object(forInfoDictionaryKey: "SIUShowOneOnOnePreview") as? Bool == true {
             DispatchQueue.main.async { menuBar.showPreview() }
         } else if launchedAsApp && Bundle.main.object(forInfoDictionaryKey: "SIUShowElevenHome") as? Bool == true {
             DispatchQueue.main.async { menuBar.showElevenPreview() }

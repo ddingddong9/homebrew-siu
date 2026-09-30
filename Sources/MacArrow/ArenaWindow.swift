@@ -48,6 +48,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func show(homeSide: FieldEdge) {
+        arenaView.effectsEnabled = UserDefaults.standard.object(forKey: "SIUEffectsEnabled") as? Bool ?? true
         arenaView.reset(homeSide: homeSide)
         window?.makeKeyAndOrderFront(nil)
         window?.makeFirstResponder(arenaView)
@@ -135,6 +136,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func toggleEffects(_ sender: NSButton) {
         arenaView.effectsEnabled = sender.state == .on
+        UserDefaults.standard.set(sender.state == .on, forKey: "SIUEffectsEnabled")
     }
     @objc private func resumePressed() { onResume?() }
     @objc private func endPressed() { onEnd?() }

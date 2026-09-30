@@ -1,6 +1,6 @@
 # siu
 
-현재 `codex/restore-siu-one-on-one` 브랜치는 기존 1대1 SIU를 기본 실행으로 복구한다. 앱을 열면 1대1 AI 연습 경기장이 나타난다. 친구 대전은 메뉴바 `⚽️`의 **방 만들기… / 방 참가… → 1대1 경기 시작…**을 사용한다. 이 개발 빌드는 `Scripts/package-app.sh 1.12.1-beta.1`로 생성하며, 아래 Homebrew cask는 기존 공개 베타를 설치하므로 이번 복구 빌드와 구분해야 한다.
+현재 `codex/restore-siu-one-on-one` 브랜치는 기존 1대1 SIU를 기본 실행으로 복구한다. 앱을 열면 축구장 배경의 **메인 대기 화면**이 나타난다. 왼쪽 **방 만들기 / 방 참가**로 친구를 연결하고, 오른쪽 **경기 시작**을 누른다(방 상대 또는 수동 연결 주소가 없으면 비활성화하며 시작 시 연결을 확인한다). **AI 연습**을 종료하면 홈으로 돌아온다. **설정**에서 화면 효과를 저장하거나 IP 연결·화면 배치를 편집할 수 있고, **조작 안내**와 **방 나가기**도 제공한다. 창을 닫았을 때는 메뉴바 `⚽️ → 메인 대기 화면`으로 다시 연다. 이 개발 빌드는 `Scripts/package-app.sh 1.12.2-beta.2`로 생성하며, 아래 Homebrew cask는 기존 공개 베타를 설치하므로 이번 복구 빌드와 구분해야 한다.
 
 > GameplayFootball 3D LAN 작업은 이 저장소의 [`codex/gameplayfootball-lan-plan`](https://github.com/ddingddong9/homebrew-siu/tree/codex/gameplayfootball-lan-plan) 브랜치에서 진행 중입니다. 아래의 기존 Swift 기반 SIU 11대11 로비와는 별도 실행 파일입니다. 다른 Mac에서 이어서 개발하려면 [GameplayFootball 인수인계](GAMEPLAYFOOTBALL_HANDOFF.md)를 먼저 보세요. 현재 GameplayFootball에는 게임 안 방 만들기·방 검색·참가 승인 로비가 아직 없습니다.
 
