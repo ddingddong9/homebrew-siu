@@ -350,7 +350,7 @@ final class MenuBarController: NSObject {
         connectionItem.title = "연결: 확인 안 됨"
     }
 
-    @objc private func showPreview() {
+    @objc func showPreview() {
         elevenPreview?.hide()
         if preview == nil { preview = ArenaPreviewController() }
         player?.hide()
