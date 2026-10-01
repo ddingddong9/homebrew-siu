@@ -1,8 +1,10 @@
-# 현재 SIU 앱: 1.14.0-beta.1
+# 현재 SIU 앱: 1.14.0-beta.2
+
+대기 중 호날두 누끼 아이콘이 랜덤 위치에서 1초 표시·1초 숨김을 반복합니다. 경기 중에는 숨깁니다.
 
 기본 SIU.app은 1대1과 Mac 4대 2대2 LAN을 제공합니다. 빨강 2명·파랑 2명, S 패스 / W 스루패스 / E 달리기 / Shift 조합 개인기, 과장된 바나나 감아차기를 지원합니다. 백숏은 슛이 아닌 소유 유지 급방향전환입니다.
 
-[brew 명령어 전체 정리](BREW_GUIDE.md) · [최신 앱 다운로드](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.14.0-beta.1) · [현재 앱 소스](https://github.com/ddingddong9/homebrew-siu/tree/codex/restore-siu-one-on-one)
+[brew 명령어 전체 정리](BREW_GUIDE.md) · [최신 앱 다운로드](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.14.0-beta.2) · [현재 앱 소스](https://github.com/ddingddong9/homebrew-siu/tree/codex/restore-siu-one-on-one)
 
 설치는 siu-app-beta cask를 사용합니다. 아래 GameplayFootball은 별도 앱이며 기존 SIU 11대11 설명은 1.12 문서입니다. 실제 Mac 4대 와이파이 대전은 별도 검증이 필요합니다.
 
