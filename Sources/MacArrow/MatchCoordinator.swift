@@ -236,6 +236,7 @@ final class MatchCoordinator {
             ball = ArenaBall(x: x, y: y, vx: vx, vy: vy,
                              carrier: side(from: message.possession), z: z, vz: vz, curve: curve)
             ball.dribblePhase = dribblePhase
+            ball.curveGoal = side(from: message.curveGoal)
             ball.lastCarryPosition = ball.carrier == .right ? arena.localPosition : arena.remotePosition
         case .sync:
             guard !isHost, message.matchID == matchID, let scores = message.scores,
@@ -378,7 +379,7 @@ final class MatchCoordinator {
                                   vx: ball.vx, vy: ball.vy, z: ball.z, vz: ball.vz,
                                   curve: ball.curve,
                                   possession: ball.carrier.map { $0 == .left ? 0 : 1 } ?? 2,
-                                  dribblePhase: ball.dribblePhase))
+                                  dribblePhase: ball.dribblePhase, curveGoal: ball.curveGoal.map { $0 == .left ? 0 : 1 }))
             }
             if now - lastSyncSentAt >= 0.5 {
                 lastSyncSentAt = now
@@ -568,6 +569,7 @@ final class MatchCoordinator {
             let position = side == .left ? arena.localPosition : remotePlayer
             let direction = side == .left ? arena.localDirection : remoteDirection
             guard ArenaPhysics.backheel(&ball, from: position, direction: direction) else { return }
+            if side == .right { remoteDirection = CGPoint(x: -direction.x, y: -direction.y) }
             kickoffOwner = nil
             sendScore(goal: false)
         }

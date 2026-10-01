@@ -11,7 +11,7 @@ The game uses **71 transparent RGBA PNG frames** in `Sources/MacArrow/Resources`
 | --- | --- | --- | --- |
 | celebration | 4–22 (19 frames) | 2.1 s | automatic after a goal, AI and LAN |
 | stepover | 0–42 (43 frames) | 1.0 s | E, while possessing the ball |
-| backheel / 백숏 | 13–21 (9 frames) | 0.65 s | Q, near a grounded ball; shoots opposite the facing direction |
+| backheel / 백숏 | 13–21 (9 frames) | 0.65 s | 1v1 Q / 2v2 Shift+Q; back chop retains possession and turns 180°, not a shot |
 
 E/Q are **SIU-specific additions**, not claimed FC Online official controls.
 Special moves cannot overlap another special action and respect pause, possession,

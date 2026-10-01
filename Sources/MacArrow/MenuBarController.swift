@@ -11,6 +11,7 @@ final class MenuBarController: NSObject {
     private var player: PlayerWindowController?
     private var preview: ArenaPreviewController?
     private var home: SIUHomeWindowController?
+    private var doubles: DoublesWindowController?
     private var homeRefreshTimer: Timer?
     private var elevenPreview: ElevenMatchWindowController?
     private var layoutEditor: LayoutEditorWindowController?
@@ -368,6 +369,12 @@ final class MenuBarController: NSObject {
             controller.onJoin = { [weak self] in self?.joinRoom() }
             controller.onStart = { [weak self] in self?.startMatch() }
             controller.onPractice = { [weak self] in self?.showPreview() }
+            controller.onDoubles = { [weak self] in
+                guard let self, !self.match.isRunning else { return }
+                self.preview?.stop()
+                if self.doubles == nil { self.doubles = DoublesWindowController() }
+                self.doubles?.show()
+            }
             controller.onSettings = { [weak self] in self?.showHomeSettings() }
             controller.onLeave = { [weak self] in self?.leaveRoom() }
             home = controller

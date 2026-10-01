@@ -314,6 +314,10 @@ private final class ArenaView: NSView {
     }
 
     func animateSpecial(_ move: SpecialMove, local: Bool, elapsed: TimeInterval = 0) {
+        if move == .backheel {
+            if local { localDirection = CGPoint(x: -localDirection.x, y: -localDirection.y) }
+            else { remoteDirection = CGPoint(x: -remoteDirection.x, y: -remoteDirection.y) }
+        }
         specialMoves[local] = PlayingMove(move: move, startedAt: ProcessInfo.processInfo.systemUptime - max(0, elapsed))
         if local { velocity = .zero; keys.removeAll() }
         needsDisplay = true

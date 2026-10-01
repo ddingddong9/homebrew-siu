@@ -40,7 +40,7 @@ enum RoomPairingError: LocalizedError {
 }
 
 struct MatchMessage: Codable {
-    static let protocolVersion = 10
+    static let protocolVersion = 11
     let version: Int
     let id: UUID
     let senderID: UUID
@@ -60,12 +60,13 @@ struct MatchMessage: Codable {
     let remaining: TimeInterval?
     let possession: Double?
     let dribblePhase: Double?
+    let curveGoal: Double?
 
     init(kind: MatchEventKind, matchID: UUID? = nil, id: UUID = UUID(),
          duration: TimeInterval? = nil, x: Double? = nil, y: Double? = nil, vx: Double? = nil, vy: Double? = nil,
          z: Double? = nil, vz: Double? = nil, curve: Double? = nil,
          actorID: UUID? = nil, scores: [String: Int]? = nil, remaining: TimeInterval? = nil,
-         possession: Double? = nil, dribblePhase: Double? = nil) {
+         possession: Double? = nil, dribblePhase: Double? = nil, curveGoal: Double? = nil) {
         version = Self.protocolVersion
         self.id = id
         senderID = GameIdentity.localID
@@ -85,6 +86,7 @@ struct MatchMessage: Codable {
         self.remaining = remaining
         self.possession = possession
         self.dribblePhase = dribblePhase
+        self.curveGoal = curveGoal
     }
 }
 

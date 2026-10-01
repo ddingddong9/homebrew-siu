@@ -19,9 +19,9 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.13.0</string>
+    <string>1.14.0</string>
     <key>SIUReleaseVersion</key>
-    <string>1.13.0-beta.1</string>
+    <string>1.14.0-beta.1</string>
     <key>SIUShowHome</key>
     <true/>
     <key>CFBundleVersion</key>
@@ -36,6 +36,7 @@
     <array>
         <string>_siu-match._udp</string>
         <string>_siu-eleven._tcp</string>
+        <string>_siu-doubles._tcp</string>
     </array>
 </dict>
 </plist>

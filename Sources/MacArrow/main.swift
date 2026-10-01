@@ -200,7 +200,7 @@ case "check":
     }
 
 case "self-test":
-    let failures = SelfTest.run() + SelfTest.runNetwork() + SelfTest.runPairSimulation() +
+    let failures = SelfTest.run() + DoublesSelfTest.run() + MainActor.assumeIsolated { DoublesSelfTest.runNetwork() } + SelfTest.runNetwork() + SelfTest.runPairSimulation() +
         MainActor.assumeIsolated { ElevenNetworkSelfTest.run() }
         + SelfTest.runWrongRoomSimulation() + SelfTest.runRoomJoinSimulation()
         + SelfTest.runBonjourRoomSimulation() + SelfTest.runRoomRejectionSimulation()

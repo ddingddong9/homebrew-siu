@@ -132,16 +132,16 @@ enum SelfTest {
         _ = ArenaPhysics.step(&landing, dt: 1.0 / 60)
         check(landing.z == 0 && landing.vz > 0 && landing.vz < 0.2 && landing.vx < 0.3,
               "landing produces a small damped bounce")
-        var heel = ArenaBall(x: 0.53, y: 0.5)
+        var heel = ArenaBall(x: 0.53, y: 0.5, carrier: .left)
         check(ArenaPhysics.backheel(&heel, from: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0)) &&
-              heel.vx < 0 && heel.carrier == nil && heel.vz > 0, "backheel reverses facing and lifts slightly")
+              heel.vx == 0 && heel.carrier == .left && heel.x < 0.5, "back chop retains possession and pulls ball behind")
         check(!ArenaPhysics.backheel(&heel, from: CGPoint(x: 0.1, y: 0.1), direction: CGPoint(x: 1, y: 0)),
               "backheel rejects distant ball")
         for _ in 0..<24 {
             _ = ArenaPhysics.step(&heel, dt: 1.0 / 60)
             _ = ArenaPhysics.contact(&heel, player: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0))
         }
-        check(heel.vx < 0 && heel.x < 0.4, "backheel does not rebound off its own shooter")
+        check(heel.vx == 0 && heel.carrier == .left, "back chop is not a shot")
         var footwork = ArenaBall(x: 0.52, y: 0.5)
         _ = ArenaPhysics.capture(&footwork, by: .left, player: CGPoint(x: 0.5, y: 0.5))
         ArenaPhysics.carry(&footwork, beside: CGPoint(x: 0.5, y: 0.5), direction: CGPoint(x: 1, y: 0), stepoverProgress: 0.08)
@@ -161,15 +161,15 @@ enum SelfTest {
                                      direction: CGPoint(x: -1, y: 0), toward: .right) &&
               bending.vx > 0, "curve shot starts toward opponent despite facing away")
         for _ in 0..<18 { _ = ArenaPhysics.step(&bending, dt: 1.0 / 60) }
-        check(bending.vy > 0 && bending.y > 0.3 && bending.carrier == nil,
-              "curve shot bends toward field center")
+        check(bending.carrier == nil && bending.curveGoal == .right && abs(bending.y-0.3) > 0.04,
+              "banana shot produces exaggerated lateral arc")
         var leftCurve = ArenaBall(x: 0.49, y: 0.7)
         check(ArenaPhysics.curveKick(&leftCurve, from: CGPoint(x: 0.49, y: 0.7),
                                      direction: CGPoint(x: 1, y: 0), toward: .left) &&
               leftCurve.vx < 0, "left-side curve shot starts toward opponent goal")
         for _ in 0..<18 { _ = ArenaPhysics.step(&leftCurve, dt: 1.0 / 60) }
-        check(leftCurve.vy < 0 && leftCurve.y < 0.7,
-              "left-side curve shot bends toward field center")
+        check(leftCurve.carrier == nil && leftCurve.curveGoal == .left && abs(leftCurve.y-0.7) > 0.04,
+              "left banana shot produces exaggerated lateral arc")
         func reachesGoal(_ initial: ArenaBall, at expected: ArenaStepResult) -> Bool {
             var simulated = initial
             for _ in 0..<180 {
@@ -186,6 +186,11 @@ enum SelfTest {
         _ = ArenaPhysics.curveKick(&leftGoalCurve, from: CGPoint(x: 0.5, y: 0.7),
                                    direction: CGPoint(x: 1, y: 0), toward: .left)
         check(reachesGoal(leftGoalCurve, at: .goalAtLeft), "curved shot reaches left goal")
+        for x in [0.2,0.5,0.8] { for y in [0.15,0.3,0.5,0.7,0.85] { for goal in [FieldEdge.left,.right] {
+            var banana = ArenaBall(x:x,y:y)
+            _ = ArenaPhysics.curveKick(&banana,from:CGPoint(x:x,y:y),direction:CGPoint(x:1,y:0),toward:goal)
+            check(reachesGoal(banana,at:goal == .left ? .goalAtLeft : .goalAtRight),"banana goal assist x=\(x) y=\(y) goal=\(goal)")
+        } } }
         let leftRestart = ArenaPhysics.startingX(conceding: .left)
         let rightRestart = ArenaPhysics.startingX(conceding: .right)
         check(abs(leftRestart.left - 0.5) < abs(leftRestart.right - 0.5),

@@ -12,6 +12,7 @@ struct ArenaBall {
     var recatchDelay: Double = 0
     var lastCarryPosition: CGPoint?
     var dribblePhase: Double = 0
+    var curveGoal: FieldEdge?
 
     static let kickoff = ArenaBall()
 }
@@ -35,11 +36,20 @@ enum ArenaPhysics {
         let dt = min(max(rawDelta, 0), 0.05)
         if ball.carrier == nil {
             if ball.curve != 0 {
-                let angle = ball.curve * dt
+                let angle: Double
+                if let goal = ball.curveGoal {
+                    let target = goalDirection(for: ball, toward: goal)
+                    let delta = atan2(sin(atan2(target.y,target.x)-atan2(ball.vy,ball.vx)),
+                                      cos(atan2(target.y,target.x)-atan2(ball.vy,ball.vx)))
+                    // Tighten dramatically near the goal so the wide arc curls into the mouth.
+                    let distanceToLine = abs((goal == .right ? 0.98 : 0.02)-ball.x)
+                    let turnRate = distanceToLine < 0.3 ? 10.0 : 2.8
+                    angle = min(max(delta,-turnRate*dt),turnRate*dt)
+                } else { angle = ball.curve * dt }
                 let vx = ball.vx * cos(angle) - ball.vy * sin(angle)
                 ball.vy = ball.vx * sin(angle) + ball.vy * cos(angle)
                 ball.vx = vx
-                ball.curve *= pow(0.96, dt * 60)
+                if ball.curveGoal == nil { ball.curve *= pow(0.96, dt * 60) }
                 if abs(ball.curve) < 0.02 { ball.curve = 0 }
             }
             ball.x += ball.vx * dt
@@ -58,6 +68,10 @@ enum ArenaPhysics {
             let drag = pow(ball.z > 0 ? 0.998 : 0.985, dt * 60)
             ball.vx *= drag
             ball.vy *= drag
+            if ball.curveGoal != nil {
+                let speed = hypot(ball.vx,ball.vy)
+                if speed > 0.001 && speed < 0.9 { ball.vx *= 0.9/speed; ball.vy *= 0.9/speed }
+            }
         }
 
         if ball.y < 0.08 {
@@ -96,7 +110,7 @@ enum ArenaPhysics {
         ball.vx = aimedX / aimedLength * speed
         ball.vy = aimedY / aimedLength * speed
         ball.carrier = nil
-        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.recatchDelay = 0.18
+        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.curveGoal = nil; ball.recatchDelay = 0.18
         return true
     }
 
@@ -106,10 +120,11 @@ enum ArenaPhysics {
         let inward = ball.y < 0.5 ? 1.0 : (ball.y > 0.5 ? -1.0 : (direction.y >= 0 ? 1.0 : -1.0))
         let bend = inward * (goal == .right ? 1.0 : -1.0)
         let targetAngle = atan2(target.y, target.x)
-        let launchAngle = targetAngle - bend * 0.16
+        let launchAngle = targetAngle - bend * 1.15
         guard kick(&ball, from: player,
-                   direction: CGPoint(x: cos(launchAngle), y: sin(launchAngle))) else { return false }
-        ball.curve = bend * 1.2
+                   direction: CGPoint(x: cos(launchAngle), y: sin(launchAngle)), power:1.25) else { return false }
+        ball.curve = bend * 2.8
+        ball.curveGoal = goal
         ball.recatchDelay = 0.28
         return true
     }
@@ -132,6 +147,7 @@ enum ArenaPhysics {
         ball.z = 0.015
         ball.vz = 0.56
         ball.curve = 0
+        ball.curveGoal = nil
         ball.recatchDelay = 0.72
         return true
     }
@@ -141,10 +157,11 @@ enum ArenaPhysics {
     }
 
     static func backheel(_ ball: inout ArenaBall, from player: CGPoint, direction: CGPoint) -> Bool {
-        guard kick(&ball, from: player, direction: CGPoint(x: -direction.x, y: -direction.y), power: 0.85) else { return false }
-        ball.z = 0.006
-        ball.vz = 0.12
-        ball.recatchDelay = 0.32
+        guard ball.carrier != nil, ball.z < 0.03,
+              hypot(ball.x - player.x, ball.y - player.y) < 0.075 else { return false }
+        // Back chop: retain possession and pull the ball behind the standing foot.
+        ball.vx = 0; ball.vy = 0; ball.vz = 0; ball.z = 0; ball.curve = 0; ball.curveGoal = nil
+        carry(&ball, beside: player, direction: CGPoint(x: -direction.x, y: -direction.y))
         return true
     }
 
@@ -159,7 +176,7 @@ enum ArenaPhysics {
         ball.vx = dx / length * 2.2
         ball.vy = dy / length * 2.2
         ball.carrier = nil
-        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.recatchDelay = 0.18
+        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.curveGoal = nil; ball.recatchDelay = 0.18
         return true
     }
 
@@ -172,7 +189,7 @@ enum ArenaPhysics {
         ball.dribblePhase = 0
         ball.vx = 0
         ball.vy = 0
-        ball.z = 0; ball.vz = 0; ball.curve = 0
+        ball.z = 0; ball.vz = 0; ball.curve = 0; ball.curveGoal = nil
         return true
     }
 
@@ -196,6 +213,7 @@ enum ArenaPhysics {
 
     static func dispossess(_ ball: inout ArenaBall, direction: CGPoint) {
         ball.carrier = nil
+        ball.curveGoal = nil; ball.curve = 0
         ball.vx = direction.x * 0.28
         ball.vy = direction.y * 0.28
         ball.recatchDelay = 0.2
@@ -207,6 +225,7 @@ enum ArenaPhysics {
         let dy = ball.y - player.y
         let distance = hypot(dx, dy)
         guard ball.recatchDelay <= 0, ball.z < 0.02, distance < 0.038 else { return false }
+        ball.curveGoal = nil; ball.curve = 0
         let angle = distance > 0.001 ? atan2(dy, dx) : atan2(direction.y, direction.x)
         ball.x = min(max(player.x + cos(angle) * 0.038, 0.04), 0.96)
         ball.y = min(max(player.y + sin(angle) * 0.038, 0.08), 0.92)

@@ -9,6 +9,7 @@ final class SIUHomeWindowController: NSWindowController {
     var onPractice: (() -> Void)?
     var onSettings: (() -> Void)?
     var onLeave: (() -> Void)?
+    var onDoubles: (() -> Void)?
     private let status = NSTextField(wrappingLabelWithString: "같은 와이파이의 친구와 경기를 준비하세요.")
     private var startButton: NSButton!
     private var leaveButton: NSButton!
@@ -75,6 +76,7 @@ final class SIUHomeWindowController: NSWindowController {
         _ = button("  ＋   방 만들기", action: #selector(create))
         _ = button("  →   방 참가", action: #selector(join))
         _ = button("  ⚽   AI 연습", action: #selector(practice))
+        _ = button("  2×2   4인 LAN 대전", action: #selector(doubles))
         _ = button("  ⚙   설정", action: #selector(settings))
         _ = button("  ?   조작 안내", action: #selector(controls))
         leaveButton = button("  ↩   방 나가기", action: #selector(leave))
@@ -135,12 +137,13 @@ final class SIUHomeWindowController: NSWindowController {
     @objc private func join() { onJoin?() }
     @objc private func start() { onStart?() }
     @objc private func practice() { onPractice?() }
+    @objc private func doubles() { onDoubles?() }
     @objc private func settings() { onSettings?() }
     @objc private func leave() { onLeave?() }
     @objc private func controls() {
         let alert = NSAlert()
-        alert.messageText = "SIU 1대1 조작 안내"
-        alert.informativeText = "방향키: 이동 · 방향 / Shift: 달리기\nD: 슛 / A: 태클 / S: 사포\nX: 팬텀 드리블 / Z: 마르세유턴\nE: 발재간 (공 소유 중) / Q: 백숏 (바라보는 방향의 반대로)\n득점 후: 호날두 세레머니 자동 재생\nE·Q는 SIU 추가 키이며 FC온라인 공식 키가 아닙니다.\nEsc: 일시정지 · 화면 효과 설정 · 경기 종료\n\n친구 대전: 방 만들기 → 친구가 방 참가 → 참가 허용 → 경기 시작"
+        alert.messageText = "SIU 조작 안내"
+        alert.informativeText = "2대2: 방향키 이동 / E 달리기 / D 슛 / S 동료 패스 / W 스루패스 / A 태클 / Z+D 커브슛\n2대2 개인기: Shift+Q 백숏 급방향전환 / Shift+E 발재간 / Shift+X 사포\nShift 조합은 SIU 간소화 키로 FC온라인의 정확한 개인기 입력과 다릅니다.\nEsc: 방장 일시정지 · 4인 모두 같은 버전 필요\n\n1대1 기존 키: Shift 달리기 / D 슛 / A 태클 / S 사포 / X 팬텀 / Z 턴 / E 발재간 / Q 백숏 급방향전환\n백숏은 공 소유를 유지하며 180도 방향을 바꿉니다.\n득점 후 세레머니 자동 재생\n\n2대2: 4인 LAN 대전 → 방 만들기 → 다른 3명 방 검색·참가 → 참가 승인 → 4인 경기 시작"
         alert.addButton(withTitle: "확인")
         alert.runModal()
     }
