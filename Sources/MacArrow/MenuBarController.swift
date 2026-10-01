@@ -11,6 +11,7 @@ final class MenuBarController: NSObject {
     private var player: PlayerWindowController?
     private var preview: ArenaPreviewController?
     private var home: SIUHomeWindowController?
+    private let idleRonaldo = IdleRonaldoOverlay()
     private var doubles: DoublesWindowController?
     private var homeRefreshTimer: Timer?
     private var elevenPreview: ElevenMatchWindowController?
@@ -45,6 +46,13 @@ final class MenuBarController: NSObject {
         self.match = MatchCoordinator(transport: transport)
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
+        idleRonaldo.isPlaying = { [weak self] in
+            guard let self else { return true }
+            return self.match.isRunning || self.preview?.isRunning == true ||
+                self.elevenPreview?.isRunning == true || self.doubles?.isRunning == true ||
+                self.player?.window?.isVisible == true
+        }
+        idleRonaldo.start()
         transport.onMessage = { [weak self] message in
             MainActor.assumeIsolated { self?.match.receive(message) }
         }
@@ -399,13 +407,18 @@ final class MenuBarController: NSObject {
         alert.informativeText = "화면 효과 설정은 다음 경기부터 적용됩니다.\n방 검색 대신 IP 주소로 연결하려면 ‘연결·화면 배치’를 사용하세요."
         let effects = NSButton(checkboxWithTitle: "슛 · 개인기 화면 효과 표시", target: nil, action: nil)
         effects.state = UserDefaults.standard.object(forKey: "SIUEffectsEnabled") as? Bool == false ? .off : .on
-        alert.accessoryView = effects
+        let idle = NSButton(checkboxWithTitle:"대기 중 호날두 아이콘 (1초 표시 / 1초 숨김)",target:nil,action:nil)
+        idle.state = UserDefaults.standard.object(forKey:"SIUIdleRonaldoEnabled") as? Bool == false ? .off : .on
+        let options = NSStackView(views:[effects,idle]); options.orientation = .vertical; options.alignment = .leading; options.spacing = 10
+        alert.accessoryView = options
         alert.addButton(withTitle: "저장")
         alert.addButton(withTitle: "연결·화면 배치…")
         alert.addButton(withTitle: "취소")
         let result = alert.runModal()
         if result != .alertThirdButtonReturn {
             UserDefaults.standard.set(effects.state == .on, forKey: "SIUEffectsEnabled")
+            UserDefaults.standard.set(idle.state == .on,forKey:"SIUIdleRonaldoEnabled")
+            idleRonaldo.refresh()
         }
         if result == .alertSecondButtonReturn { openLayout() }
     }

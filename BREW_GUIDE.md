@@ -1,10 +1,10 @@
-# SIU 앱 설치·업데이트 명령어 (1.14.0-beta.1)
+# SIU 앱 설치·업데이트 명령어 (1.14.0-beta.2)
 
 현재 게임은 `siu-app-beta` **앱 cask**다. `brew install siu` 또는 `brew install siu-beta`는 예전 CLI를 설치하므로 현재 1대1·2대2 앱 설치에 사용하지 않는다.
 
 ## Homebrew가 없는 친구
 
-[Homebrew 공식 설치 안내](https://brew.sh/ko/)에서 설치한다. Homebrew 설치 과정에서 **Xcode Command Line Tools**를 요구할 수 있으며 개발 도구 요구사항은 [공식 설치 문서](https://docs.brew.sh/Installation)를 따른다. SIU 앱 자체는 미리 빌드되어 있어 Xcode·CLT 없이 실행된다. Homebrew를 설치하고 싶지 않다면 [GitHub 릴리스](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.14.0-beta.1)의 `siu-v1.14.0-beta.1-macos-app.zip`을 풀고 `SIU.app`을 응용프로그램으로 옮긴다. 앱은 ad-hoc 서명된 미공증 베타이며 macOS 보안 안내가 나타날 수 있다. 시스템 전체 보안 설정을 끄지 않는다.
+[Homebrew 공식 설치 안내](https://brew.sh/ko/)에서 설치한다. Homebrew 설치 과정에서 **Xcode Command Line Tools**를 요구할 수 있으며 개발 도구 요구사항은 [공식 설치 문서](https://docs.brew.sh/Installation)를 따른다. SIU 앱 자체는 미리 빌드되어 있어 Xcode·CLT 없이 실행된다. Homebrew를 설치하고 싶지 않다면 [GitHub 릴리스](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.14.0-beta.2)의 `siu-v1.14.0-beta.2-macos-app.zip`을 풀고 `SIU.app`을 응용프로그램으로 옮긴다. 앱은 ad-hoc 서명된 미공증 베타이며 macOS 보안 안내가 나타날 수 있다. 시스템 전체 보안 설정을 끄지 않는다.
 
 ## 최초 설치 (네 Mac 각각)
 
@@ -57,7 +57,7 @@ brew uninstall --cask ddingddong9/siu/siu-app-beta
 
 ## 2대2 참가 순서와 키
 
-네 Mac을 같은 와이파이에 연결하고 모두 **1.14.0-beta.1**을 실행한다. 홈의 **4인 LAN 대전**에서 방장은 **방 만들기**, 친구 세 명은 **방 검색 → 방 선택 → 참가**. 방장이 각 참가자를 승인한다. 한 명씩 승인 완료 후 다음 사람이 참가하면 배정 순서를 맞추기 쉽다.
+네 Mac을 같은 와이파이에 연결하고 모두 **1.14.0-beta.2**를 실행한다. 홈의 **4인 LAN 대전**에서 방장은 **방 만들기**, 친구 세 명은 **방 검색 → 방 선택 → 참가**. 방장이 각 참가자를 승인한다. 한 명씩 승인 완료 후 다음 사람이 참가하면 배정 순서를 맞추기 쉽다.
 
 | 승인 순서 | 팀·선수 |
 |---|---|

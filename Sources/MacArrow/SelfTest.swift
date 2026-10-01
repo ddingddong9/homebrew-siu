@@ -3,6 +3,10 @@ import Foundation
 enum SelfTest {
     static func run() -> [String] {
         var failures: [String] = []
+        let display = CGRect(x:-1920,y:50,width:1920,height:1030)
+        for x in [0.0,0.5,1.0] { for y in [0.0,0.5,1.0] {
+            if !display.contains(IdleIconPlacement.frame(in:display,unitX:x,unitY:y)) { failures.append("idle icon stays within display bounds") }
+        } }
         func check(_ condition: Bool, _ name: String) {
             if !condition { failures.append(name) }
         }

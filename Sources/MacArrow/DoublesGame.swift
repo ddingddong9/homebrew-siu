@@ -345,6 +345,7 @@ final class DoublesSession {
 
 @MainActor
 final class DoublesWindowController: NSWindowController, NSWindowDelegate {
+    var isRunning: Bool { session.state.running }
     private let session = DoublesSession()
     private let pitch = DoublesPitchView(frame: .zero)
     private let status = NSTextField(labelWithString: "")
