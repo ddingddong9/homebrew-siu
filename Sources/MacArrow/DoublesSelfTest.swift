@@ -89,6 +89,16 @@ enum DoublesSelfTest {
         guard wait(3,until:{ host.state.teams == [0,0,1,1] && guests.allSatisfy{$0.state.teams == host.state.teams} }) else { return ["2v2 team re-selection synchronization"] }
         host.startMatch()
         guard wait(3,until:{ guests.allSatisfy { $0.state.running } }) else { return ["2v2 start broadcast"] }
+        // Simulate a UI run-loop mode that prevents game timers from firing.
+        // An idle TCP connection must survive longer than the old 8s limit.
+        let blockedMode = RunLoop.Mode("SIUDoublesTimeoutRegression")
+        let keepAlive = Timer(timeInterval:0.05,repeats:true) { _ in }
+        RunLoop.main.add(keepAlive,forMode:blockedMode)
+        let blockedUntil = Date().addingTimeInterval(8.3)
+        while Date() < blockedUntil { RunLoop.main.run(mode:blockedMode,before:Date().addingTimeInterval(0.05)) }
+        keepAlive.invalidate()
+        _ = wait(0.2,until:{false})
+        guard host.state.running,host.state.occupied.count == 4,guests.allSatisfy({$0.state.running}) else { return ["2v2 idle period must not disconnect players"] }
         guests[0].input = DoublesInput(x:1,y:0,sprint:true)
         guard wait(2,until:{ host.state.players[1].x > 0.36 && guests[2].state.players[1].x > 0.35 && guests[2].state.players[1].stamina < 97 }) else { return ["2v2 guest input, stamina and host snapshot relay"] }
         host.action("pause")

@@ -395,13 +395,16 @@ final class DoublesSession {
     }
     private func startTimer() {
         previous = ProcessInfo.processInfo.systemUptime
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
     }
     private func tick() {
         let now = ProcessInfo.processInfo.systemUptime, dt = now - previous; previous = now; ticks += 1
-        for s in Array(peers.keys) where now - (lastSeen[s] ?? now) > 8 { lost(s) }
+        // Silence alone is not a disconnect: menus, system dialogs and temporary
+        // Wi-Fi stalls must not end everyone's match. TCP EOF/errors still do.
         if host {
             engine.inputs[0] = input; engine.state.occupied = [0] + readyPeers.sorted(); engine.tick(dt: dt); state = engine.state
             for s in peers.keys where now - (lastSeen[s] ?? now) > 0.5 { engine.inputs[s] = DoublesInput() }
