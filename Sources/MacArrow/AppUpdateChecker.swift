@@ -54,6 +54,8 @@ struct SIUVersion: Comparable, Equatable {
 
 struct SIUAvailableUpdate {
     let version: SIUVersion
+    var digest: String? = nil
+    var archiveURL: URL { URL(string:"https://github.com/ddingddong9/homebrew-siu/releases/download/v\(version.raw)/siu-v\(version.raw)-macos-app.zip")! }
     var releaseURL: URL {
         URL(string: "https://github.com/ddingddong9/homebrew-siu/releases/tag/v\(version.raw)")!
     }
@@ -61,7 +63,7 @@ struct SIUAvailableUpdate {
 
 enum AppUpdateChecker {
     private struct Release: Decodable {
-        struct Asset: Decodable { let name: String }
+        struct Asset: Decodable { let name: String; let digest: String? }
         let tag_name: String
         let draft: Bool
         let assets: [Asset]
@@ -78,7 +80,8 @@ enum AppUpdateChecker {
                   release.assets.contains(where: { $0.name == "siu-v\(version.raw)-macos-app.zip" }) else {
                 return nil
             }
-            return SIUAvailableUpdate(version: version)
+            let asset = release.assets.first { $0.name == "siu-v\(version.raw)-macos-app.zip" }
+            return SIUAvailableUpdate(version: version,digest:asset?.digest)
         }.max { $0.version < $1.version }
     }
 

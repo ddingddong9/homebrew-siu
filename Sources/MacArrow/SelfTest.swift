@@ -256,6 +256,10 @@ enum SelfTest {
         check(SIUVersion("1.10.0-beta.1")! > SIUVersion("1.9.9")!,
               "minor update ordering")
         check(SIUVersion("bad-version") == nil, "invalid update version")
+        check(AppAutoUpdater.checksum(Data("abc".utf8)) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","updater SHA256")
+        check(AppAutoUpdater.digestValue("sha256:"+String(repeating:"a",count:64)) != nil && AppAutoUpdater.digestValue("sha256:bad") == nil,"updater digest validation")
+        check(AppAutoUpdater.safeArchiveEntries("SIU.app/\nSIU.app/Contents/Info.plist\n"),"updater archive shape")
+        check(!AppAutoUpdater.safeArchiveEntries("SIU.app/../../etc/test\n") && !AppAutoUpdater.safeArchiveEntries("/Applications/SIU.app/test\n"),"updater traversal rejected")
         let releases = """
         [
           {"tag_name":"v1.9.0-beta.2","draft":false,"assets":[{"name":"siu-v1.9.0-beta.2-macos-app.zip"}]},

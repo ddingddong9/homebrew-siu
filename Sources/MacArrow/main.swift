@@ -51,6 +51,9 @@ guard let command = arguments.first ?? (launchedAsApp ?
 }
 
 switch command {
+case "_apply-update":
+    guard arguments.count == 2 else { exit(2) }
+    exit(MainActor.assumeIsolated { AppAutoUpdater.applyPlan(at:arguments[1]) })
 case "pair-code":
     do {
         let key = try RoomSecretStore.generate()
@@ -200,7 +203,7 @@ case "check":
     }
 
 case "self-test":
-    let failures = SelfTest.run() + DoublesSelfTest.run() + MainActor.assumeIsolated { DoublesSelfTest.runNetwork() } + SelfTest.runNetwork() + SelfTest.runPairSimulation() +
+    let failures = SelfTest.run() + AppAutoUpdaterSelfTest.run() + DoublesSelfTest.run() + MainActor.assumeIsolated { DoublesSelfTest.runNetwork() } + SelfTest.runNetwork() + SelfTest.runPairSimulation() +
         MainActor.assumeIsolated { ElevenNetworkSelfTest.run() }
         + SelfTest.runWrongRoomSimulation() + SelfTest.runRoomJoinSimulation()
         + SelfTest.runBonjourRoomSimulation() + SelfTest.runRoomRejectionSimulation()
@@ -210,7 +213,8 @@ case "self-test":
 case "asset-check":
     let expected = [("move", 4), ("run", 4), ("run-front", 4), ("run-back", 4),
                     ("kick", 8), ("kick-front", 4), ("kick-side", 4),
-                    ("tackle", 4), ("tackle-front", 4), ("tackle-back", 4)]
+                    ("tackle", 4), ("tackle-front", 4), ("tackle-back", 4),
+                    ("messi-idle",1),("messi-shot",23),("messi-tackle",20),("messi-phantom",7)]
     for (name, count) in expected {
         for index in 1...count {
             let filename = String(format: "%@-%02d", name, index)
@@ -255,7 +259,7 @@ case "asset-check":
         }
     }
     let specialCount = SpecialMove.allCases.reduce(0) { $0 + $1.frameCount }
-    print("44 transparent character frames, \(specialCount) special-move cutouts, blue team sprite and keeper/throw-in atlas OK")
+    print("44 Ronaldo frames, 51 Messi transparent frames, \(specialCount) special-move cutouts, blue team sprite and keeper/throw-in atlas OK")
 
 case "--help", "-h", "help":
     usage()

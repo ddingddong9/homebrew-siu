@@ -30,6 +30,17 @@ enum DoublesSelfTest {
         check(goal.state.red == 1 && goal.kickoffTeam == 1 && goal.state.players[0].move == "celebration", "team goal and conceding kickoff")
         check(!DoublesInput(x:.nan,y:0).valid, "NaN input rejected")
         var invalid = DoublesState(); invalid.players.removeLast(); check(!invalid.valid,"invalid roster rejected")
+        var selection = DoublesEngine(); selection.state.occupied = [0,1,2,3]
+        selection.selectTeam(1,slot:0)
+        check(selection.state.teams == [1,0,0,1] && selection.state.valid,"balanced team swap")
+        selection.start(); selection.carrier = 0; selection.kickoffTeam = nil
+        check(selection.state.team(0) == 1 && selection.state.players[0].x == 0.7,"selection survives start and spawns on correct side")
+        selection.ball = ArenaBall(x:0.7,y:0.5,carrier:.right)
+        selection.action("pass",slot:0)
+        check(selection.ball.vy > 0,"pass targets selected teammate rather than original slot")
+        let teams = selection.state.teams; selection.selectTeam(0,slot:0)
+        check(selection.state.teams == teams,"team change blocked in game")
+        var unbalanced = DoublesState(); unbalanced.teams = [0,0,0,1]; check(!unbalanced.valid,"3v1 rejected")
         var tackling = DoublesEngine(); tackling.start(); tackling.kickoffTeam = nil
         tackling.state.players[0].x = 0.4; tackling.state.players[2].x = 0.6
         tackling.ball = ArenaBall(x:0.6,y:0.5,carrier:.right); tackling.carrier = 2
@@ -70,6 +81,12 @@ enum DoublesSelfTest {
             guard wait(3,until:{ guest.slot == index+1 }) else { return ["2v2 slot \(index+1) assignment"] }
         }
         guard wait(3,until:{ host.state.occupied.count == 4 && guests.allSatisfy { $0.state.occupied.count == 4 } }) else { return ["2v2 four-client lobby"] }
+        guests[2].selectTeam(.ronaldo)
+        guard wait(3,until:{ host.state.team(3) == 0 && guests.allSatisfy{$0.state.teams == host.state.teams} }) else { return ["2v2 team selection synchronization"] }
+        guests[2].selectTeam(.messi)
+        // Rate limiting requires a short run-loop gap before another team exchange.
+        _ = wait(0.6,until:{false}); guests[2].selectTeam(.messi)
+        guard wait(3,until:{ host.state.teams == [0,0,1,1] && guests.allSatisfy{$0.state.teams == host.state.teams} }) else { return ["2v2 team re-selection synchronization"] }
         host.startMatch()
         guard wait(3,until:{ guests.allSatisfy { $0.state.running } }) else { return ["2v2 start broadcast"] }
         guests[0].input = DoublesInput(x:1,y:0,sprint:true)

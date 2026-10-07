@@ -52,6 +52,19 @@ final class MatchCoordinator {
     private var roomPeerEndpoint: NWEndpoint?
 
     var isRunning: Bool { matchID != nil }
+    var roomIsHost = true
+    private(set) var leftTeam = FootballTeam.ronaldo
+    var localTeam: FootballTeam { roomIsHost ? leftTeam : leftTeam.opposite }
+    func selectTeam(_ team: FootballTeam) {
+        guard !isRunning else { return }
+        if roomIsHost { leftTeam = team; publishTeams() }
+        else { send(MatchMessage(kind:.teamSelection,x:Double(team.rawValue),y:1)) }
+    }
+    func publishTeams() {
+        guard roomIsHost, !isRunning else { return }
+        send(MatchMessage(kind:.teamSelection,x:Double(leftTeam.rawValue),y:0))
+    }
+    func requestTeams() { if !roomIsHost { send(MatchMessage(kind:.teamSelection,x:0,y:2)) } }
 
     init(transport: MatchTransport) {
         self.transport = transport
@@ -85,7 +98,7 @@ final class MatchCoordinator {
         let id = UUID()
         let seconds = TimeInterval(min(max(minutes, 1), 90) * 60)
         begin(id: id, duration: seconds, elapsed: 0, host: true)
-        send(MatchMessage(kind: .start, matchID: id, duration: seconds), reportFailure: true)
+        send(MatchMessage(kind: .start, matchID: id, duration: seconds,x:Double(leftTeam.rawValue)), reportFailure: true)
         return true
     }
 
@@ -99,9 +112,15 @@ final class MatchCoordinator {
         guard seenMessageIDs.insert(message.id).inserted else { return }
         if seenMessageIDs.count > 2048 { seenMessageIDs.removeAll(keepingCapacity: true) }
         switch message.kind {
+        case .teamSelection:
+            guard !isRunning, let value = message.x, let team = FootballTeam.allCases.first(where:{Double($0.rawValue) == value}) else { return }
+            if roomIsHost, message.y == 2 { publishTeams() }
+            else if roomIsHost, message.y == 1 { leftTeam = team.opposite; publishTeams() }
+            else if !roomIsHost, message.y == 0 { leftTeam = team }
         case .start:
             guard let id = message.matchID, let seconds = message.duration,
-                  (60...5400).contains(seconds) else { return }
+                  (60...5400).contains(seconds), let value = message.x,
+                  let team = FootballTeam.allCases.first(where:{Double($0.rawValue) == value}) else { return }
             guard !isRunning else {
                 send(MatchMessage(kind: .stop, matchID: id))
                 return
@@ -110,6 +129,7 @@ final class MatchCoordinator {
                 send(MatchMessage(kind: .stop, matchID: id))
                 return
             }
+            leftTeam = team
             begin(id: id, duration: seconds,
                   elapsed: max(0, Date().timeIntervalSince(message.sentAt)), host: false)
         case .stop:
@@ -308,6 +328,7 @@ final class MatchCoordinator {
         lastRainbowAt = 0
         lastPhantomAt = 0
         lastSpecialAt.removeAll()
+        arena.setTeams(local:host ? leftTeam : leftTeam.opposite)
         arena.show(homeSide: host ? .left : .right)
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }

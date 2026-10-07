@@ -17,6 +17,7 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
     private let arenaView: ArenaView
     private var pausePanel: NSPanel?
+    func setTeams(local: FootballTeam) { arenaView.localTeam = local }
 
     init() {
         let size = NSSize(width: 1060, height: 690)
@@ -190,6 +191,7 @@ private final class ArenaView: NSView {
     private var velocity = CGPoint.zero
     var motion = AthleteMotion()
     var remoteStamina = 100.0
+    var localTeam = FootballTeam.ronaldo
     @discardableResult func startSlide() -> Bool {
         guard !paused, !isLocalFallen, motion.startSlide(direction:localDirection) else { return false }
         tackleAt = visualNow; velocity = .zero; return true
@@ -587,7 +589,7 @@ private final class ArenaView: NSView {
             let sinceFall = now - (isLocal ? fallStartedAt : remoteFallStartedAt)
             let sinceTurn = now - (isLocal ? localTurnAt : remoteTurnAt)
             let isFalling = (0..<fallDuration).contains(sinceFall)
-            let image: NSImage
+            var image: NSImage
             let specialImage = specialMoves[isLocal].flatMap { specialAnimations[$0.move]?.image(at: now - $0.startedAt) }
             if isFalling {
                 image = sprites[min(2, sprites.count - 1)]
@@ -601,6 +603,13 @@ private final class ArenaView: NSView {
                 let frame = isLocal ? Int(animationPhase) % sprites.count : 2
                 image = sprites[frame]
             }
+            let team = isLocal ? localTeam : localTeam.opposite
+            if team == .messi {
+                let sincePhantom = now - (isLocal ? localPhantomAt : remotePhantomAt)
+                let clip = isFalling ? "idle" : sinceKick < 0.55 ? "shot" : sinceTackle < 0.55 ? "tackle" : sincePhantom < phantomDuration ? "phantom" : "idle"
+                let progress = clip == "shot" ? sinceKick/0.55 : clip == "tackle" ? sinceTackle/0.55 : sincePhantom/phantomDuration
+                image = MessiSprites.shared.image(clip,progress:progress) ?? image
+            }
             let height: CGFloat = specialImage != nil && !isFalling ? 154 : 118
             let width = min(specialImage != nil ? 116 : 88, height * image.size.width / max(image.size.height, 1))
             guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -611,7 +620,7 @@ private final class ArenaView: NSView {
                 context.scaleBy(x: CGFloat(abs(facing) < 0.16 ? (facing < 0 ? -0.16 : 0.16) : facing), y: 1)
             }
             if direction.x < -0.1 { context.scaleBy(x: -1, y: 1) }
-            if !isFalling && (0..<AthleteMotion.slideDuration).contains(sinceTackle) {
+            if team != .messi && !isFalling && (0..<AthleteMotion.slideDuration).contains(sinceTackle) {
                 context.rotate(by:-Double.pi/3)
             }
             if isFalling {
@@ -631,13 +640,13 @@ private final class ArenaView: NSView {
             arrow.move(to: center); arrow.line(to: arrowTip)
             arrow.lineWidth = 5; color.setStroke(); arrow.stroke()
         }
-        let label = isLocal ? "나" : "상대"
+        let label = "\(isLocal ? "나" : "상대") · \((isLocal ? localTeam : localTeam.opposite).title)"
         let stamina = isLocal ? motion.stamina : remoteStamina
         let bar = NSRect(x:center.x-30,y:center.y-61,width:60,height:5)
         NSColor.black.withAlphaComponent(0.5).setFill(); bar.fill()
         (stamina < 20 ? NSColor.systemOrange : NSColor.systemGreen).setFill()
         NSRect(x:bar.minX,y:bar.minY,width:bar.width*stamina/100,height:bar.height).fill()
-        NSString(string: label).draw(in: NSRect(x: center.x - 25, y: center.y - 48, width: 50, height: 20),
+        NSString(string: label).draw(in: NSRect(x: center.x - 65, y: center.y - 48, width: 130, height: 20),
                                       withAttributes: [.font: NSFont.boldSystemFont(ofSize: 14),
                                                        .foregroundColor: NSColor.white,
                                                        .paragraphStyle: centeredText])

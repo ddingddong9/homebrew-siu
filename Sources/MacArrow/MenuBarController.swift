@@ -21,6 +21,9 @@ final class MenuBarController: NSObject {
     private var updateCheckInFlight = false
     private var availableUpdate: SIUAvailableUpdate?
     private var promptRetryScheduled = false
+    private var updateInstalling = false
+    private var updateProgressWindow: NSWindow?
+    private var promptedUpdateThisLaunch: String?
     private let installedVersion = SIUVersion(Bundle.main.object(forInfoDictionaryKey: "SIUReleaseVersion") as? String ?? "")
     private enum RoomMode: Equatable { case host, guest }
     private var roomMode: RoomMode?
@@ -89,6 +92,7 @@ final class MenuBarController: NSObject {
                   self.roomPeerID == peerID else { return }
             self.roomEndpoint = endpoint
             self.match.setRoomPeer(endpoint)
+            self.match.publishTeams()
             self.connectionItem.title = "방: 친구 연결 확인됨"
         }
         transport.onJoinRequest = { [weak self] request, reply in
@@ -168,7 +172,7 @@ final class MenuBarController: NSObject {
         menu.items.last?.target = self
         statusItem.menu = menu
         if Bundle.main.bundleURL.pathExtension == "app", installedVersion != nil {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
+            DispatchQueue.main.async { [weak self] in
                 self?.checkForUpdates(manual: false)
             }
             updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
@@ -186,7 +190,7 @@ final class MenuBarController: NSObject {
 
     private func checkForUpdates(manual: Bool) {
         guard let installedVersion else { return }
-        guard !updateCheckInFlight else { return }
+        guard !updateCheckInFlight, !updateInstalling else { return }
         updateCheckInFlight = true
         if manual { updateItem.title = "업데이트 확인 중…" }
         AppUpdateChecker.check(installed: installedVersion) { [weak self] result in
@@ -208,9 +212,9 @@ final class MenuBarController: NSObject {
 
     private func presentUpdateAlertIfNeeded(force: Bool = false) {
         guard let update = availableUpdate else { return }
-        let lastPrompted = UserDefaults.standard.string(forKey: "lastPromptedSIUUpdate")
-        guard force || lastPrompted != update.version.raw else { return }
+        guard !updateInstalling, force || promptedUpdateThisLaunch != update.version.raw else { return }
         if match.isRunning || preview?.isRunning == true || elevenPreview?.isRunning == true ||
+            doubles?.isRunning == true ||
             NSApplication.shared.modalWindow != nil {
             if !promptRetryScheduled {
                 promptRetryScheduled = true
@@ -222,21 +226,44 @@ final class MenuBarController: NSObject {
             }
             return
         }
-        UserDefaults.standard.set(update.version.raw, forKey: "lastPromptedSIUUpdate")
+        promptedUpdateThisLaunch = update.version.raw
         let alert = NSAlert()
         alert.messageText = "SIU 업데이트가 있습니다"
-        alert.informativeText = "v\(update.version.raw) 버전이 나왔습니다. 현재 SIU를 종료한 뒤 Homebrew로 업데이트하세요."
-        alert.addButton(withTitle: "업데이트 명령 복사")
+        alert.informativeText = "v\(update.version.raw) 버전이 나왔습니다. 업데이트를 누르면 다운로드·검증 후 앱을 자동 교체하고 다시 실행합니다. 기존 앱은 백업으로 보관됩니다."
+        alert.addButton(withTitle: "업데이트 후 재실행")
         alert.addButton(withTitle: "릴리스 보기")
         alert.addButton(withTitle: "나중에")
         NSApplication.shared.activate(ignoringOtherApps: true)
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString("brew update && brew upgrade --cask siu-app-beta", forType: .string)
+            installUpdate(update)
         case .alertSecondButtonReturn:
             NSWorkspace.shared.open(update.releaseURL)
         default: break
+        }
+    }
+
+    private func installUpdate(_ update:SIUAvailableUpdate) {
+        guard !updateInstalling else { return }; updateInstalling = true; updateItem.isEnabled = false
+        let w = NSWindow(contentRect:NSRect(x:0,y:0,width:400,height:120),styleMask:[.titled],backing:.buffered,defer:false)
+        w.title = "SIU 업데이트"; w.center()
+        let label = NSTextField(labelWithString:"업데이트 준비 중…"); label.frame = NSRect(x:24,y:55,width:355,height:30)
+        let spinner = NSProgressIndicator(frame:NSRect(x:24,y:25,width:355,height:16)); spinner.isIndeterminate = true; spinner.style = .bar; spinner.startAnimation(nil)
+        w.contentView?.addSubview(label); w.contentView?.addSubview(spinner); w.makeKeyAndOrderFront(nil); updateProgressWindow = w
+        // Prevent starting matches while installation is prepared.
+        home?.window?.orderOut(nil); doubles?.close(); createRoomItem.isEnabled = false; joinRoomItem.isEnabled = false; startItem.isEnabled = false; previewItem.isEnabled = false
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let folder = try await AppAutoUpdater.prepare(update,target:Bundle.main.bundleURL) { message in
+                    DispatchQueue.main.async { label.stringValue = message }
+                }
+                label.stringValue = "설치 후 재실행 중…"; try AppAutoUpdater.launchHelper(folder)
+            } catch {
+                self.updateProgressWindow?.close(); self.updateProgressWindow = nil; self.updateInstalling = false; self.updateItem.isEnabled = true
+                self.createRoomItem.isEnabled = true; self.joinRoomItem.isEnabled = true; self.startItem.isEnabled = true; self.previewItem.isEnabled = true
+                self.showHome(); self.showUpdateMessage(error.localizedDescription+"\n대신 실행: brew update && brew upgrade --cask ddingddong9/siu/siu-app-beta")
+            }
         }
     }
 
@@ -292,6 +319,8 @@ final class MenuBarController: NSObject {
         let key = RoomSecretStore.freshKey()
         transport.useRoomKey(key)
         roomMode = .host
+        match.roomIsHost = true
+        match.selectTeam(.ronaldo)
         leaveRoomItem.isEnabled = true
         roomEndpoint = nil
         roomPeerID = nil
@@ -335,10 +364,12 @@ final class MenuBarController: NSObject {
                         return
                     }
                     self.roomMode = .guest
+                    self.match.roomIsHost = false
                     self.leaveRoomItem.isEnabled = true
                     self.roomEndpoint = room.endpoint
                     self.roomPeerID = hostID
                     self.match.setRoomPeer(room.endpoint)
+                    self.match.requestTeams()
                     self.connectionItem.title = "방: 친구 연결 확인됨"
                     controller.close()
                 }
@@ -367,7 +398,7 @@ final class MenuBarController: NSObject {
     }
 
     @objc func showHome() {
-        guard !match.isRunning else { return }
+        guard !match.isRunning,!updateInstalling else { return }
         preview?.stop()
         elevenPreview?.hide()
         player?.hide()
@@ -383,6 +414,7 @@ final class MenuBarController: NSObject {
                 if self.doubles == nil { self.doubles = DoublesWindowController() }
                 self.doubles?.show()
             }
+            controller.onTeam = { [weak self] team in self?.match.selectTeam(team); self?.refreshHome() }
             controller.onSettings = { [weak self] in self?.showHomeSettings() }
             controller.onLeave = { [weak self] in self?.leaveRoom() }
             home = controller
@@ -397,8 +429,9 @@ final class MenuBarController: NSObject {
     private func refreshHome() {
         guard home?.window?.isVisible == true else { return }
         home?.update(status: connectionItem.title,
-                     canStart: !match.isRunning && (roomEndpoint != nil || (roomMode == nil && ScreenLayoutStore.load().screens.contains { !$0.isLocal && !$0.host.isEmpty })),
+                     canStart: !match.isRunning && roomMode != .guest && (roomEndpoint != nil || (roomMode == nil && ScreenLayoutStore.load().screens.contains { !$0.isLocal && !$0.host.isEmpty })),
                      inRoom: roomMode != nil && !match.isRunning)
+        home?.updateTeam(match.localTeam,inRoom:roomMode != nil && !match.isRunning)
     }
 
     private func showHomeSettings() {
@@ -496,6 +529,7 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func startMatch() {
+        guard !updateInstalling,roomMode != .guest else { return }
         checkPeers { [weak self] connected in
             guard let self, connected else { return }
             let alert = NSAlert()

@@ -10,6 +10,9 @@ final class SIUHomeWindowController: NSWindowController {
     var onSettings: (() -> Void)?
     var onLeave: (() -> Void)?
     var onDoubles: (() -> Void)?
+    var onTeam: ((FootballTeam) -> Void)?
+    private let teamChoice = NSSegmentedControl(labels:["호날두팀","메시팀"],trackingMode:.selectOne,target:nil,action:nil)
+    private let teamStatus = NSTextField(labelWithString:"진영 선택 · 서로 반대 팀으로 경기합니다")
     private let status = NSTextField(wrappingLabelWithString: "같은 와이파이의 친구와 경기를 준비하세요.")
     private var startButton: NSButton!
     private var leaveButton: NSButton!
@@ -89,6 +92,17 @@ final class SIUHomeWindowController: NSWindowController {
         card.layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
         card.layer?.borderWidth = 1
         root.addSubview(card)
+        teamChoice.target = self; teamChoice.action = #selector(chooseTeam)
+        teamChoice.selectedSegment = 0
+        teamChoice.translatesAutoresizingMaskIntoConstraints = false
+        teamStatus.translatesAutoresizingMaskIntoConstraints = false
+        teamStatus.font = .systemFont(ofSize:12); teamStatus.textColor = .white
+        root.addSubview(teamChoice); root.addSubview(teamStatus)
+        let portraits = NSStackView(); portraits.orientation = .horizontal; portraits.distribution = .fillEqually
+        portraits.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(portraits)
+        for image in [ResourceBundle.images.url(forResource:"move-01",withExtension:"png").flatMap(NSImage.init(contentsOf:)),MessiSprites.shared.image()] {
+            let view = NSImageView(); view.image = image; view.imageScaling = .scaleProportionallyUpOrDown; portraits.addArrangedSubview(view)
+        }
         let title = label("FRIEND MATCH", size: 12, color: .systemTeal)
         let heading = label("친구와 1대1", size: 24)
         status.textColor = .white
@@ -114,6 +128,9 @@ final class SIUHomeWindowController: NSWindowController {
             menu.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 38), menu.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 40),
             card.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -32), card.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 42),
             card.widthAnchor.constraint(equalToConstant: 284), card.heightAnchor.constraint(equalToConstant: 270),
+            teamStatus.topAnchor.constraint(equalTo:card.bottomAnchor,constant:24), teamStatus.leadingAnchor.constraint(equalTo:card.leadingAnchor),
+            teamChoice.topAnchor.constraint(equalTo:teamStatus.bottomAnchor,constant:12),teamChoice.leadingAnchor.constraint(equalTo:card.leadingAnchor),teamChoice.widthAnchor.constraint(equalTo:card.widthAnchor),
+            portraits.topAnchor.constraint(equalTo:teamChoice.bottomAnchor,constant:12),portraits.leadingAnchor.constraint(equalTo:card.leadingAnchor),portraits.widthAnchor.constraint(equalTo:card.widthAnchor),portraits.heightAnchor.constraint(equalToConstant:115),
             title.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 22), title.topAnchor.constraint(equalTo: card.topAnchor, constant: 24),
             heading.leadingAnchor.constraint(equalTo: title.leadingAnchor), heading.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 10),
             status.leadingAnchor.constraint(equalTo: title.leadingAnchor), status.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -22),
@@ -133,6 +150,11 @@ final class SIUHomeWindowController: NSWindowController {
         startButton.isEnabled = canStart
         leaveButton.isEnabled = inRoom
     }
+    func updateTeam(_ team: FootballTeam, inRoom: Bool) {
+        teamChoice.selectedSegment = team.rawValue; teamChoice.isEnabled = inRoom
+        teamStatus.stringValue = inRoom ? "나: \(team.title) · 상대: \(team.opposite.title)" : "방을 만들거나 참가하면 진영 선택 가능"
+    }
+    @objc private func chooseTeam() { if let team = FootballTeam(rawValue:teamChoice.selectedSegment) { onTeam?(team) } }
     @objc private func create() { onCreate?() }
     @objc private func join() { onJoin?() }
     @objc private func start() { onStart?() }
@@ -143,7 +165,7 @@ final class SIUHomeWindowController: NSWindowController {
     @objc private func controls() {
         let alert = NSAlert()
         alert.messageText = "SIU 조작 안내"
-        alert.informativeText = "2대2: 방향키 이동 / E 달리기 / D 슛 / S 동료 패스 / W 스루패스 / A 태클 / Z+D 커브슛\n2대2 개인기: Shift+Q 백숏 급방향전환 / Shift+E 발재간 / Shift+X 사포\nShift 조합은 SIU 간소화 키로 FC온라인의 정확한 개인기 입력과 다릅니다.\nEsc: 방장 일시정지 · 4인 모두 같은 버전 필요\n\n1대1 기존 키: Shift 달리기 / D 슛 / A 태클 / S 사포 / X 팬텀 / Z 턴 / E 발재간 / Q 백숏 급방향전환\n백숏은 공 소유를 유지하며 180도 방향을 바꿉니다.\n득점 후 세레머니 자동 재생\n\n2대2: 4인 LAN 대전 → 방 만들기 → 다른 3명 방 검색·참가 → 참가 승인 → 4인 경기 시작"
+        alert.informativeText = "방 대기 중 호날두팀·메시팀을 선택하세요. 1대1은 서로 반대 팀, 2대2는 팀당 2명이며 선택 시 상대 슬롯과 교환합니다.\n\n2대2: 방향키 이동 / E 스태미나 달리기 / D 슛 / S 동료 패스 / W 스루패스 / A 슬라이딩 태클 / Z+D 커브슛\n개인기: Shift+Q 백숏 / Shift+E 발재간 / Shift+X 사포 / Shift+A 팬텀\nShift 조합은 SIU 간소화 키로 FC온라인의 정확한 개인기 입력과 다릅니다. Esc: 방장 일시정지\n\n1대1: Shift 스태미나 달리기 / D 슛 / A 태클 / S 사포 / X 팬텀 / Z 턴 / E 발재간 / Q 백숏\n메시: 기본·슛·태클·팬텀 원본 누끼. 자료가 없는 동작은 메시 기본 자세와 공 효과를 사용합니다.\n\n2대2: 4인 LAN 대전 → 방 만들기 → 다른 3명 참가 → 진영 선택 → 4인 경기 시작. 모두 같은 버전 필요."
         alert.addButton(withTitle: "확인")
         alert.runModal()
     }

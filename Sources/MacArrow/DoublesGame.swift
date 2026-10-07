@@ -22,8 +22,11 @@ struct DoublesState: Codable {
     var running = false
     var paused = false
     var occupied = [0]
+    var teams = [0,0,1,1]
+    func team(_ slot:Int) -> Int { teams[slot] }
+    var balanced: Bool { teams.filter{$0 == 0}.count == 2 && teams.filter{$0 == 1}.count == 2 }
     var valid: Bool {
-        players.count == 4 && players.allSatisfy {
+        teams.count == 4 && teams.allSatisfy{(0...1).contains($0)} && balanced && players.count == 4 && players.allSatisfy {
             [$0.x, $0.y, $0.dx, $0.dy, $0.animation,$0.stamina,$0.sliding,$0.stunned].allSatisfy(\.isFinite) &&
             (0...100).contains($0.stamina) && (0...0.55).contains($0.sliding) && (0...1.55).contains($0.stunned) &&
             (0.04...0.96).contains($0.x) && (0.08...0.92).contains($0.y) &&
@@ -41,7 +44,7 @@ struct DoublesInput: Codable {
 }
 
 struct DoublesPacket: Codable {
-    var version = 2
+    var version = 3
     var kind: String
     var slot: Int? = nil
     var input: DoublesInput? = nil
@@ -65,7 +68,7 @@ struct DoublesFraming {
             guard (1...Self.limit).contains(size) else { throw CocoaError(.coderReadCorrupt) }
             guard buffer.count >= size + 4 else { break }
             let packet = try JSONDecoder().decode(DoublesPacket.self, from: Data(buffer.dropFirst(4).prefix(size)))
-            guard packet.version == 2 else { throw CocoaError(.coderReadCorrupt) }
+            guard packet.version == 3 else { throw CocoaError(.coderReadCorrupt) }
             result.append(packet); buffer = Data(buffer.dropFirst(size + 4))
         }
         return result
@@ -81,17 +84,31 @@ struct DoublesEngine {
     var wait = 0.0
     var cooldown = Array(repeating: 0.0, count: 4)
     var motions = Array(repeating:AthleteMotion(),count:4)
-    static func team(_ slot: Int) -> Int { slot < 2 ? 0 : 1 }
     mutating func start() {
-        let occupied = state.occupied
-        self = DoublesEngine(); state.occupied = occupied; state.running = true
+        let occupied = state.occupied, teams = state.teams
+        self = DoublesEngine(); state.occupied = occupied; state.teams = teams
+        resetPositions(); state.running = true
+    }
+    mutating func selectTeam(_ team: Int, slot:Int) {
+        guard !state.running,(0..<4).contains(slot),(0...1).contains(team),state.team(slot) != team else { return }
+        // Balanced slots are exchanged atomically, never a 3v1 roster.
+        guard let other = (0..<4).first(where:{$0 != slot && state.team($0) == team && !state.occupied.contains($0)}) ?? (0..<4).first(where:{$0 != slot && state.team($0) == team}) else { return }
+        state.teams[other] = state.team(slot); state.teams[slot] = team; resetPositions()
+    }
+    private mutating func resetPositions() {
+        for team in 0...1 {
+            for (index,slot) in (0..<4).filter({state.team($0) == team}).enumerated() {
+                state.players[slot] = DoublesPlayer(x:team == 0 ? (index == 0 ? 0.46 : 0.3) : 0.7,y:index == 0 ? 0.5 : 0.7,dx:team == 0 ? 1 : -1)
+                state.players[slot].stamina = motions[slot].stamina
+            }
+        }
     }
     mutating func action(_ action: String, slot: Int) {
         guard (0..<4).contains(slot), state.running else { return }
         if action == "pause", slot == 0 { state.paused.toggle(); return }
         guard !state.paused, wait <= 0, cooldown[slot] <= 0,
               !motions[slot].isSliding, state.players[slot].stunned <= 0, state.players[slot].animation <= 0,
-              kickoffTeam == nil || kickoffTeam == Self.team(slot) else { return }
+              kickoffTeam == nil || kickoffTeam == state.team(slot) else { return }
         let p = state.players[slot], position = CGPoint(x: p.x, y: p.y), direction = CGPoint(x: p.dx, y: p.dy)
         guard carrier == nil || carrier == slot || action == "tackle" else { return }
         switch action {
@@ -102,19 +119,25 @@ struct DoublesEngine {
         case "stepover":
             guard carrier == slot else { return }
             state.players[slot].move = "stepover"; state.players[slot].animation = 1
+        case "phantom":
+            guard carrier == slot else { return }
+            state.players[slot].move = "phantom"; state.players[slot].animation = 0.65
+            state.players[slot].x = min(0.95,max(0.05,p.x-p.dy*0.065))
+            state.players[slot].y = min(0.92,max(0.08,p.y+p.dx*0.065))
         case "tackle":
             guard motions[slot].startSlide(direction:direction) else { return }
             state.players[slot].sliding = AthleteMotion.slideDuration
             resolveTackle(slot:slot)
         case "shot", "pass", "through", "curve", "rainbow":
             let success: Bool
-            if action == "curve" { success = ArenaPhysics.curveKick(&ball, from: position, direction: direction, toward: slot < 2 ? .right : .left) }
+            if action == "curve" { success = ArenaPhysics.curveKick(&ball, from: position, direction: direction, toward: state.team(slot) == 0 ? .right : .left) }
             else if action == "rainbow" { success = carrier == slot && ArenaPhysics.rainbow(&ball, from: position, direction: direction) }
             else if action == "pass" || action == "through" {
-                let teammate = slot ^ 1, target = state.players[teammate]
+                guard let teammate = (0..<4).first(where:{$0 != slot && state.team($0) == state.team(slot)}) else { return }
+                let target = state.players[teammate]
                 let lead = action == "through" ? 0.17 : 0.0
                 let movement = inputs[teammate], length = hypot(movement.x, movement.y)
-                let leadX = length > 0 ? movement.x / length : (slot < 2 ? 1.0 : -1.0)
+                let leadX = length > 0 ? movement.x / length : (state.team(slot) == 0 ? 1.0 : -1.0)
                 let leadY = length > 0 ? movement.y / length : 0
                 let tx = min(0.94, max(0.06, target.x + leadX * lead))
                 let ty = min(0.9, max(0.1, target.y + leadY * lead))
@@ -126,6 +149,7 @@ struct DoublesEngine {
             }
             else { success = ArenaPhysics.kick(&ball, from: position, direction: direction, power: 1) }
             guard success else { return }; carrier = nil
+            if action != "rainbow" { state.players[slot].move = "shot"; state.players[slot].animation = 0.55 }
         default: return
         }
         kickoffTeam = nil; cooldown[slot] = 0.8
@@ -165,8 +189,8 @@ struct DoublesEngine {
             for slot in 0..<4 {
                 let p = state.players[slot], point = CGPoint(x: p.x, y: p.y)
                 if carrier == nil, state.players[slot].stunned == 0, !motions[slot].isSliding,
-                   kickoffTeam == nil || kickoffTeam == Self.team(slot),
-                   ArenaPhysics.capture(&ball, by: slot < 2 ? .left : .right, player: point) { carrier = slot; kickoffTeam = nil }
+                   kickoffTeam == nil || kickoffTeam == state.team(slot),
+                   ArenaPhysics.capture(&ball, by: state.team(slot) == 0 ? .left : .right, player: point) { carrier = slot; kickoffTeam = nil }
             }
             if let slot = carrier {
                 let p = state.players[slot]
@@ -181,13 +205,13 @@ struct DoublesEngine {
                 let scoringTeam = result == .goalAtRight ? 0 : 1
                 if scoringTeam == 0 { state.red += 1 } else { state.blue += 1 }
                 ball = .kickoff; carrier = nil; kickoffTeam = 1 - scoringTeam; wait = 2.3
-                state.players = DoublesState().players
+                resetPositions()
                 for s in 0..<4 {
                     motions[s].cancelSlide()
                     state.players[s].stamina = motions[s].stamina
                 }
-                if kickoffTeam == 1 { state.players[0].x = 0.3; state.players[2].x = 0.54 }
-                for slot in 0..<4 where Self.team(slot) == scoringTeam {
+                if kickoffTeam == 1, let red = state.teams.firstIndex(of:0), let blue = state.teams.firstIndex(of:1) { state.players[red].x = 0.3; state.players[blue].x = 0.54 }
+                for slot in 0..<4 where state.team(slot) == scoringTeam {
                     state.players[slot].move = "celebration"; state.players[slot].animation = 2.1
                 }
             }
@@ -198,7 +222,7 @@ struct DoublesEngine {
     private mutating func resolveTackle(slot:Int) {
         let p = state.players[slot], point = CGPoint(x:p.x,y:p.y), direction = CGPoint(x:p.dx,y:p.dy)
         if ArenaPhysics.tackle(&ball,from:point,direction:direction) { carrier = nil }
-        for victim in 0..<4 where Self.team(victim) != Self.team(slot) {
+        for victim in 0..<4 where state.team(victim) != state.team(slot) {
             let target = state.players[victim]
             if target.stunned <= 0 && hypot(target.x-p.x,target.y-p.y) < 0.075 {
                 state.players[victim].stunned = 1.0; motions[victim].cancelSlide()
@@ -229,6 +253,7 @@ final class DoublesSession {
     private var lastSeen: [Int: Double] = [:]
     private var writes: [Int: Int] = [:]
     private var generation = UUID()
+    private var teamChangeAt: [Int:Double] = [:]
     var input = DoublesInput()
     private var timer: Timer?
     private var ticks = 0
@@ -239,13 +264,14 @@ final class DoublesSession {
         listener?.cancel(); listener = nil; listenerReady = false; browser?.cancel(); browser = nil
         peers.values.forEach { $0.cancel() }; peers = [:]; readyPeers = []; frames = [:]; lastSeen = [:]; writes = [:]
         host = false; slot = 0; state = DoublesState(); engine = DoublesEngine(); input = DoublesInput()
+        teamChangeAt.removeAll()
         status = "방에서 나왔습니다"; changed?()
     }
     func create() throws {
         stop(); host = true
         let l = try NWListener(using: .tcp, on: .any); listener = l
         l.service = NWListener.Service(name: "SIU 2대2 · \(Host.current().localizedName ?? "Mac")", type: Self.service,
-                                      txtRecord: NWTXTRecord(["version": "2"]))
+                                      txtRecord: NWTXTRecord(["version": "3"]))
         l.newConnectionHandler = { [weak self] connection in
             MainActor.assumeIsolated {
                 guard let self, !self.state.running, !self.approving,
@@ -273,7 +299,7 @@ final class DoublesSession {
                 guard let self else { return }
                 self.rooms = results.compactMap {
                     guard case .service(let name, _, _, _) = $0.endpoint,
-                          case .bonjour(let txt) = $0.metadata, txt["version"] == "2" else { return nil }
+                          case .bonjour(let txt) = $0.metadata, txt["version"] == "3" else { return nil }
                     return LocalRoom(name: name, endpoint: $0.endpoint)
                 }.sorted { $0.name < $1.name }
                 self.status = self.rooms.isEmpty ? "같은 와이파이에서 2대2 방 검색 중…" : "방을 선택하고 참가하세요"
@@ -326,6 +352,7 @@ final class DoublesSession {
         if host {
             if p.kind == "input", let i = p.input, i.valid { engine.inputs[slot] = i }
             else if p.kind == "action", let a = p.action { engine.action(a, slot: slot) }
+            else if p.kind == "team", let team = p.slot { chooseTeam(team,for:slot) }
         } else if p.kind == "welcome", let s = p.slot, (1...3).contains(s) { self.slot = s }
         else if p.kind == "state", let s = p.state, s.valid { state = s }
     }
@@ -355,6 +382,17 @@ final class DoublesSession {
         if host { engine.action(a, slot: 0) }
         else if slot >= 1 { send(DoublesPacket(kind: "action", action: a), to: 0) }
     }
+    func selectTeam(_ team:FootballTeam) {
+        guard !state.running else { return }
+        if host { chooseTeam(team.rawValue,for:0) }
+        else if slot >= 1 { send(DoublesPacket(kind:"team",slot:team.rawValue),to:0) }
+    }
+    private func chooseTeam(_ team:Int,for slot:Int) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now-(teamChangeAt[slot] ?? -.infinity) > 0.5 else { return }
+        teamChangeAt[slot] = now; engine.selectTeam(team,slot:slot)
+        state = engine.state; changed?()
+    }
     private func startTimer() {
         previous = ProcessInfo.processInfo.systemUptime
         timer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
@@ -370,7 +408,8 @@ final class DoublesSession {
             if ticks.isMultiple(of: 3) { for s in peers.keys { send(DoublesPacket(kind: "state", state: state), to: s) } }
         } else if ticks.isMultiple(of: 3) { send(DoublesPacket(kind: "input", input: input), to: 0) }
         if !state.paused && (host || !peers.isEmpty) {
-            status = "\(slot < 2 ? "빨강" : "파랑") #\(slot + 1)\(host ? " (방장)" : "") · \(state.occupied.count)/4 · \(state.running ? "경기 중" : "대기")"
+            let team = (0..<4).contains(slot) ? FootballTeam(rawValue:state.team(slot))!.title : "연결 중"
+            status = "\(team) #\(slot + 1)\(host ? " (방장)" : "") · \(state.occupied.count)/4 · \(state.running ? "경기 중" : "대기 · 진영 변경 시 상대 슬롯과 교환")"
         }
         changed?()
     }
@@ -384,6 +423,7 @@ final class DoublesWindowController: NSWindowController, NSWindowDelegate {
     private let status = NSTextField(labelWithString: "")
     private let rooms = NSPopUpButton(frame: .zero)
     private var start: NSButton!
+    private let teamChoice = NSSegmentedControl(labels:["호날두팀","메시팀"],trackingMode:.selectOne,target:nil,action:nil)
     init() {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1320, height: 840), styleMask: [.titled,.closable,.miniaturizable,.resizable], backing: .buffered, defer: false)
         super.init(window: w); w.title = "SIU — 2대2 · 4인 LAN"; w.delegate = self; w.center()
@@ -396,7 +436,8 @@ final class DoublesWindowController: NSWindowController, NSWindowDelegate {
         toolbar.addArrangedSubview(NSButton(title: "참가", target: self, action: #selector(join)))
         start = NSButton(title: "4인 경기 시작", target: self, action: #selector(begin)); toolbar.addArrangedSubview(start)
         toolbar.addArrangedSubview(NSButton(title: "방 나가기", target: self, action: #selector(leave)))
-        let help = NSTextField(labelWithString: "방향키 이동 · E 달리기 · D 슛 · S 패스 · W 스루패스 · A 태클 · Shift+Q 백숏 · Shift+E 발재간 · Shift+X 사포 · Z+D 커브슛 · Esc 방장 일시정지")
+        teamChoice.target = self; teamChoice.action = #selector(chooseTeam); toolbar.addArrangedSubview(teamChoice)
+        let help = NSTextField(labelWithString: "방향키 이동 · E 달리기 · D 슛 · S 패스 · W 스루패스 · A 태클 · Shift+Q 백숏 · Shift+E 발재간 · Shift+X 사포 · Shift+A 팬텀 · Z+D 커브슛")
         help.font = .systemFont(ofSize: 12)
         for v in [toolbar, status, pitch, help] { v.translatesAutoresizingMaskIntoConstraints = false; root.addSubview(v) }
         NSLayoutConstraint.activate([
@@ -407,7 +448,7 @@ final class DoublesWindowController: NSWindowController, NSWindowDelegate {
         ])
         pitch.session = session
         session.approve = { endpoint in
-            let a = NSAlert(); a.messageText = "2대2 참가 허용"; a.informativeText = "\(endpoint)\n같은 와이파이의 친구가 맞나요? 승인 순서대로 빨강 #2, 파랑 #3, 파랑 #4에 배정됩니다."
+            let a = NSAlert(); a.messageText = "2대2 참가 허용"; a.informativeText = "\(endpoint)\n같은 와이파이의 친구가 맞나요? 대기 화면에서 호날두팀·메시팀을 선택할 수 있습니다."
             a.addButton(withTitle: "허용"); a.addButton(withTitle: "거절"); return a.runModal() == .alertFirstButtonReturn
         }
         session.changed = { [weak self] in self?.refresh() }; refresh()
@@ -419,7 +460,10 @@ final class DoublesWindowController: NSWindowController, NSWindowDelegate {
         let titles = session.rooms.map(\.name)
         if rooms.itemTitles != titles { rooms.removeAllItems(); rooms.addItems(withTitles: titles) }
         pitch.needsDisplay = true
+        teamChoice.isEnabled = !session.state.running && (session.host || session.slot >= 1)
+        if (0..<4).contains(session.slot) { teamChoice.selectedSegment = session.state.team(session.slot) }
     }
+    @objc private func chooseTeam() { if let team = FootballTeam(rawValue:teamChoice.selectedSegment) { session.selectTeam(team) }; window?.makeFirstResponder(pitch) }
     @objc private func create() { do { try session.create() } catch { status.stringValue = error.localizedDescription }; window?.makeFirstResponder(pitch) }
     @objc private func browse() { session.browse() }
     @objc private func join() { guard session.rooms.indices.contains(rooms.indexOfSelectedItem) else { return }; session.join(session.rooms[rooms.indexOfSelectedItem]); window?.makeFirstResponder(pitch) }
@@ -477,7 +521,7 @@ final class DoublesPitchView: NSView {
     override func keyDown(with event: NSEvent) {
         guard !event.isARepeat else { return }; keys.insert(event.keyCode); updateInput(event)
         let shifted = event.modifierFlags.contains(.shift)
-        let actions: [UInt16:String] = shifted ? [12:"backchop",14:"stepover",7:"rainbow"] : [2:keys.contains(6) ? "curve" : "shot",1:"pass",13:"through",0:"tackle",53:"pause"]
+        let actions: [UInt16:String] = shifted ? [12:"backchop",14:"stepover",7:"rainbow",0:"phantom"] : [2:keys.contains(6) ? "curve" : "shot",1:"pass",13:"through",0:"tackle",53:"pause"]
         if let a = actions[event.keyCode] { session?.action(a) }
     }
     override func keyUp(with event: NSEvent) { keys.remove(event.keyCode); updateInput(event) }
@@ -499,23 +543,26 @@ final class DoublesPitchView: NSView {
         for x in [0.015, 0.96] { NSColor.white.withAlphaComponent(0.35).setFill(); NSRect(x:x*bounds.width,y:bounds.height*0.38,width:bounds.width*0.025,height:bounds.height*0.24).fill() }
         func text(_ string: String, _ p: CGPoint, size: CGFloat = 16, color: NSColor = .white) { (string as NSString).draw(at:p,withAttributes:[.font:NSFont.boldSystemFont(ofSize:size),.foregroundColor:color]) }
         for slot in 0..<4 {
-            let p = state.players[slot], center = pt(p.x,p.y), color: NSColor = slot < 2 ? .systemRed : .systemBlue
+            let p = state.players[slot], center = pt(p.x,p.y), team = state.team(slot), color: NSColor = team == 0 ? .systemRed : .systemBlue
             let now = ProcessInfo.processInfo.systemUptime
             if previousPlayers.count == 4, hypot(p.x-previousPlayers[slot].x,p.y-previousPlayers[slot].y) > 0.00001 { movingUntil[slot] = now + 0.15 }
             NSColor.black.withAlphaComponent(0.3).setFill(); NSBezierPath(ovalIn:NSRect(x:center.x-22,y:center.y-6,width:44,height:12)).fill()
             let special = p.move.flatMap { moves[$0]?.image(at: ($0 == "celebration" ? 2.1 : $0 == "stepover" ? 1 : 0.65) - p.animation) }
             let walking = sprites.isEmpty ? nil : sprites[now < movingUntil[slot] ? Int(now*9)%sprites.count : 0]
             let tackling = p.sliding > 0 && !tackleSprites.isEmpty ? tackleSprites[min(3,Int((0.55-p.sliding)/0.14))] : nil
-            if let image = special ?? tackling ?? walking, let cg = NSGraphicsContext.current?.cgContext {
-                let image = teamImage(image,blue:slot >= 2), height:CGFloat = special == nil ? 110 : 140
+            let messiClip = p.sliding > 0 ? "tackle" : p.move == "shot" ? "shot" : p.move == "phantom" ? "phantom" : "idle"
+            let progress = messiClip == "tackle" ? 1-p.sliding/0.55 : messiClip == "shot" ? 1-p.animation/0.55 : 1-p.animation/0.65
+            let character = team == 1 ? MessiSprites.shared.image(messiClip,progress:progress) : (special ?? tackling ?? walking)
+            if let image = character, let cg = NSGraphicsContext.current?.cgContext {
+                let height:CGFloat = team == 1 || special == nil ? 110 : 140
                 let width = height * image.size.width / max(image.size.height,1)
                 cg.saveGState(); cg.translateBy(x:center.x,y:center.y-8)
                 if p.dx < -0.1 { cg.scaleBy(x:-1,y:1) }
-                if p.sliding > 0 { cg.rotate(by:-Double.pi/3) }
+                if p.sliding > 0 && team == 0 { cg.rotate(by:-Double.pi/3) }
                 else if p.stunned > 0 { cg.rotate(by:-Double.pi/2) }
                 image.draw(in:NSRect(x:-width/2,y:0,width:width,height:height)); cg.restoreGState()
             }
-            text("\(slot == session.slot ? "▼ 나 · " : "")\(slot < 2 ? "RED" : "BLUE") #\(slot+1)",CGPoint(x:center.x-40,y:center.y-24),size:12,color:color)
+            text("\(slot == session.slot ? "▼ 나 · " : "")\(FootballTeam(rawValue:team)!.title) #\(slot+1)",CGPoint(x:center.x-40,y:center.y-24),size:12,color:color)
             NSColor.black.withAlphaComponent(0.6).setFill(); NSRect(x:center.x-30,y:center.y-34,width:60,height:5).fill()
             (p.stamina < 20 ? NSColor.systemOrange : NSColor.systemGreen).setFill()
             NSRect(x:center.x-30,y:center.y-34,width:60*p.stamina/100,height:5).fill()
@@ -539,6 +586,6 @@ final class DoublesPitchView: NSView {
         let lifted = CGPoint(x:b.x,y:b.y+state.z*bounds.height)
         NSColor.white.setFill(); NSBezierPath(ovalIn:NSRect(x:lifted.x-11,y:lifted.y-11,width:22,height:22)).fill()
         NSColor.black.setFill(); for i in 0..<3 { let a = spin+Double(i)*2*Double.pi/3; NSBezierPath(ovalIn:NSRect(x:lifted.x+cos(a)*6-3,y:lifted.y+sin(a)*6-3,width:6,height:6)).fill() }
-        text("빨강 \(state.red) : \(state.blue) 파랑   |   \(Int(state.remaining)/60):\(String(format:"%02d",Int(state.remaining)%60))\(state.paused ? "  일시정지" : "")",CGPoint(x:bounds.midX-160,y:bounds.height-28),size:20)
+        text("호날두팀 \(state.red) : \(state.blue) 메시팀   |   \(Int(state.remaining)/60):\(String(format:"%02d",Int(state.remaining)%60))\(state.paused ? "  일시정지" : "")",CGPoint(x:bounds.midX-200,y:bounds.height-28),size:20)
     }
 }
