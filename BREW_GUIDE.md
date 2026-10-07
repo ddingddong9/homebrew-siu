@@ -1,10 +1,12 @@
-# SIU 앱 설치·업데이트 명령어 (1.16.0-beta.1)
+# SIU 앱 설치·업데이트 명령어 (1.16.0-beta.2)
+
+이번 패치에서는 2대2의 **8초 무응답 강제 종료를 제거**했다. 메뉴·일시적인 지연 때문에 연결을 끊지 않으며 실제 TCP 종료/오류는 감지한다. 오래된 이동 입력은 정지 처리한다.
 
 현재 게임은 `siu-app-beta` **앱 cask**다. `brew install siu` 또는 `brew install siu-beta`는 예전 CLI를 설치하므로 현재 1대1·2대2 앱 설치에 사용하지 않는다.
 
 ## Homebrew가 없는 친구
 
-[Homebrew 공식 설치 안내](https://brew.sh/ko/)에서 설치한다. Homebrew 설치 과정에서 CLT를 요구할 수 있으며 [공식 요구사항](https://docs.brew.sh/Installation)을 따른다. SIU 자체는 미리 빌드되어 Xcode·CLT 없이 실행된다. Homebrew 없이 설치하려면 [최신 릴리스](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.16.0-beta.1)의 `siu-v1.16.0-beta.1-macos-app.zip`을 풀고 `SIU.app`을 응용프로그램으로 옮긴다. 미공증 베타라 macOS 보안 안내가 나타날 수 있다. 시스템 전체 보안 설정을 끄지 않는다.
+[Homebrew 공식 설치 안내](https://brew.sh/ko/)에서 설치한다. Homebrew 설치 과정에서 CLT를 요구할 수 있으며 [공식 요구사항](https://docs.brew.sh/Installation)을 따른다. SIU 자체는 미리 빌드되어 Xcode·CLT 없이 실행된다. Homebrew 없이 설치하려면 [최신 릴리스](https://github.com/ddingddong9/homebrew-siu/releases/tag/v1.16.0-beta.2)의 `siu-v1.16.0-beta.2-macos-app.zip`을 풀고 `SIU.app`을 응용프로그램으로 옮긴다. 미공증 베타라 macOS 보안 안내가 나타날 수 있다. 시스템 전체 보안 설정을 끄지 않는다.
 
 ## 최초 설치 (네 Mac 각각)
 
@@ -59,7 +61,7 @@ brew uninstall --cask ddingddong9/siu/siu-app-beta
 
 ## 2대2 참가 순서와 키
 
-네 Mac을 같은 와이파이에 연결하고 모두 **1.16.0-beta.1**을 실행한다. 홈의 **4인 LAN 대전**에서 방장은 **방 만들기**, 친구 세 명은 **방 검색 → 방 선택 → 참가**. 방장이 각 참가자를 승인하고 대기 중 **호날두팀 / 메시팀**을 선택한다.
+네 Mac을 같은 와이파이에 연결하고 모두 **1.16.0-beta.2**을 실행한다. 홈의 **4인 LAN 대전**에서 방장은 **방 만들기**, 친구 세 명은 **방 검색 → 방 선택 → 참가**. 방장이 각 참가자를 승인하고 대기 중 **호날두팀 / 메시팀**을 선택한다.
 
 | 승인 순서 | 팀·선수 |
 |---|---|
