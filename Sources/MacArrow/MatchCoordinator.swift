@@ -41,6 +41,9 @@ final class MatchCoordinator {
     private var rightFallenUntil: TimeInterval = 0
     private var lastKickAt: TimeInterval = 0
     private var lastTackleAt: TimeInterval = 0
+    private var tackleCooldown: [FieldEdge:Double] = [:]
+    private var sliding: [FieldEdge:Double] = [:]
+    private var slidePosition: [FieldEdge:CGPoint] = [:]
     private var lastTurnAt: TimeInterval = 0
     private var lastRainbowAt: TimeInterval = 0
     private var lastPhantomAt: TimeInterval = 0
@@ -119,7 +122,9 @@ final class MatchCoordinator {
                   (0.05...0.95).contains(x), (0.08...0.92).contains(y),
                   (0.5...1.5).contains(hypot(dx, dy)),
                   message.sentAt > latestPlayerAt else { return }
+            guard let stamina = message.stamina, stamina.isFinite, (0...100).contains(stamina) else { return }
             latestPlayerAt = message.sentAt
+            arena.setRemoteStamina(stamina)
             remoteSeenAt = ProcessInfo.processInfo.systemUptime
             remotePlayer = CGPoint(x: x, y: y)
             remoteDirection = CGPoint(x: dx, y: dy)
@@ -135,13 +140,16 @@ final class MatchCoordinator {
                       curved: message.kind == .curveShot)
         case .tackle:
             guard message.matchID == matchID, pausedAt == nil else { return }
-            arena.animateRemoteTackle()
             if isHost {
                 guard ProcessInfo.processInfo.systemUptime - remoteSeenAt < 1,
                       let dx = message.vx, let dy = message.vy,
                       dx.isFinite, dy.isFinite, (0.5...1.5).contains(hypot(dx, dy)),
                       applyTackle(from: remotePlayer, direction: CGPoint(x: dx, y: dy),
                                   side: .right) else { return }
+                arena.animateRemoteTackle()
+                send(MatchMessage(kind:.tackle,matchID:matchID,vx:dx,vy:dy,actorID:message.senderID))
+            } else if message.actorID != GameIdentity.localID {
+                arena.animateRemoteTackle()
             }
         case .fall:
             guard !isHost, message.matchID == matchID,
@@ -295,6 +303,7 @@ final class MatchCoordinator {
         rightFallenUntil = 0
         lastKickAt = 0
         lastTackleAt = 0
+        sliding = [:]; tackleCooldown = [:]; slidePosition = [:]
         lastTurnAt = 0
         lastRainbowAt = 0
         lastPhantomAt = 0
@@ -344,13 +353,22 @@ final class MatchCoordinator {
             powerActorSide = nil
         }
         if now >= kickoffAt && powerActorSide == nil { arena.advance(dt: dt) }
+        for side in Array(tackleCooldown.keys) { tackleCooldown[side] = max(0,(tackleCooldown[side] ?? 0)-min(dt,0.05)) }
+        for side in Array(sliding.keys) {
+            if isHost && now >= kickoffAt {
+                resolveSlideContact(from:side == .left ? arena.localPosition : remotePlayer,
+                                    direction:side == .left ? arena.localDirection : remoteDirection,side:side)
+            }
+            sliding[side] = max(0,(sliding[side] ?? 0)-min(dt,0.05))
+            if sliding[side] == 0 { sliding[side] = nil }
+        }
         arena.setFireBall(now >= powerReleaseAt && now < fireUntil)
         if now - lastPlayerSentAt >= 0.10 {
             lastPlayerSentAt = now
             let position = arena.localPosition
             let direction = arena.localDirection
             send(MatchMessage(kind: .player, matchID: id, x: position.x, y: position.y,
-                              vx: direction.x, vy: direction.y))
+                              vx: direction.x, vy: direction.y, stamina:arena.stamina))
         }
         if isHost {
             if now >= kickoffAt && powerActorSide == nil {
@@ -487,7 +505,10 @@ final class MatchCoordinator {
         if isHost {
             guard applyTackle(from: position, direction: direction, side: .left) else { return }
             send(MatchMessage(kind: .tackle, matchID: id, vx: direction.x, vy: direction.y))
-        } else { send(MatchMessage(kind: .tackle, matchID: id, vx: direction.x, vy: direction.y)) }
+        } else {
+            guard arena.startSlide() else { return }
+            send(MatchMessage(kind: .tackle, matchID: id, vx: direction.x, vy: direction.y))
+        }
     }
 
     @discardableResult
@@ -495,22 +516,36 @@ final class MatchCoordinator {
                              side: FieldEdge) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         guard canAct(side: side), kickoffOwner == nil,
-              now - lastTackleAt > 0.85 else { return false }
+              (tackleCooldown[side] ?? 0) <= 0 else { return false }
+        if side == .left, !arena.startSlide() { return false }
+        tackleCooldown[side] = 1.15; sliding[side] = AthleteMotion.slideDuration
+        slidePosition[side] = position
         lastTackleAt = now
+        resolveSlideContact(from:position,direction:direction,side:side)
+        return true
+    }
+
+    private func resolveSlideContact(from position:CGPoint,direction:CGPoint,side:FieldEdge) {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now >= (side == .left ? leftFallenUntil : rightFallenUntil) else { sliding[side] = nil; return }
+        let stored = slidePosition[side] ?? position
+        let previous = hypot(stored.x-position.x,stored.y-position.y) < 0.15 ? stored : position
+        slidePosition[side] = position
+        let nearBall = SlidingContact.closest(to:CGPoint(x:ball.x,y:ball.y),from:previous,to:position)
         let wasCarriedByOpponent = ball.carrier == (side == .left ? FieldEdge.right : .left)
         let opponent: FieldEdge = side == .left ? .right : .left
         let isOpponentTurning = arena.marseilleProgress(side: opponent) != nil ||
             arena.phantomProgress(side: opponent) != nil
         if !wasCarriedByOpponent || !isOpponentTurning {
-            _ = ArenaPhysics.tackle(&ball, from: position, direction: direction)
+            _ = ArenaPhysics.tackle(&ball, from: nearBall, direction: direction)
         }
         let victim: FieldEdge = side == .left ? .right : .left
         let target = victim == .left ? arena.localPosition : remotePlayer
+        let nearVictim = SlidingContact.closest(to:target,from:previous,to:position)
         if !isOpponentTurning, now - remoteSeenAt < 1,
-           hypot(position.x - target.x, position.y - target.y) < 0.08 {
+           hypot(nearVictim.x - target.x, nearVictim.y - target.y) < 0.08 {
             applyFall(to: victim, notifyPeer: true)
         }
-        return true
     }
 
     private func applyFall(to victim: FieldEdge, notifyPeer: Bool) {
@@ -533,6 +568,7 @@ final class MatchCoordinator {
     private func canAct(side: FieldEdge) -> Bool {
         let now = ProcessInfo.processInfo.systemUptime
         return pausedAt == nil && now >= kickoffAt && powerActorSide == nil &&
+            (sliding[side] ?? 0) <= 0 && (side != (isHost ? .left : .right) || !arena.isSliding) &&
             arena.specialProgress(side: side) == nil &&
             arena.marseilleProgress(side: side) == nil && arena.phantomProgress(side: side) == nil &&
             now >= (side == .left ? leftFallenUntil : rightFallenUntil)

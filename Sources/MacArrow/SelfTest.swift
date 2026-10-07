@@ -3,6 +3,21 @@ import Foundation
 enum SelfTest {
     static func run() -> [String] {
         var failures: [String] = []
+        var athlete = AthleteMotion()
+        for _ in 0..<300 { _ = athlete.tick(dt:1.0/60,moving:true,sprint:true) }
+        if athlete.stamina > 20 || !athlete.exhausted { failures.append("sprint exhaustion and recovery hysteresis") }
+        for _ in 0..<100 { _ = athlete.tick(dt:1.0/60,moving:false,sprint:false) }
+        if athlete.exhausted || athlete.stamina <= 20 { failures.append("stamina recovers while resting") }
+        let beforeRest = athlete.stamina
+        _ = athlete.tick(dt:0.05,moving:false,sprint:true)
+        if athlete.stamina < beforeRest { failures.append("sprint held stationary does not drain") }
+        if !athlete.startSlide(direction:CGPoint(x:1,y:0)) { failures.append("slide starts without nearby ball") }
+        var slideDistance = 0.0
+        for _ in 0..<34 { if let slide = athlete.tick(dt:1.0/60,moving:true,sprint:false).slide { slideDistance += slide.x/60 } }
+        if athlete.isSliding || !(0.28...0.34).contains(slideDistance) { failures.append("slide dash decelerates and ends") }
+        if athlete.startSlide(direction:CGPoint(x:1,y:0)) { failures.append("slide cooldown prevents spam") }
+        let closest = SlidingContact.closest(to:CGPoint(x:0.55,y:0.5),from:CGPoint(x:0.5,y:0.5),to:CGPoint(x:0.6,y:0.5))
+        if abs(closest.x-0.55) > 0.001 { failures.append("swept slide contact") }
         let display = CGRect(x:-1920,y:50,width:1920,height:1030)
         for x in [0.0,0.5,1.0] { for y in [0.0,0.5,1.0] {
             if !display.contains(IdleIconPlacement.frame(in:display,unitX:x,unitY:y)) { failures.append("idle icon stays within display bounds") }

@@ -7,6 +7,9 @@ struct DoublesPlayer: Codable {
     var dx: Double = 1, dy: Double = 0
     var move: String? = nil
     var animation: Double = 0
+    var stamina = 100.0
+    var sliding = 0.0
+    var stunned = 0.0
 }
 
 struct DoublesState: Codable {
@@ -21,7 +24,8 @@ struct DoublesState: Codable {
     var occupied = [0]
     var valid: Bool {
         players.count == 4 && players.allSatisfy {
-            [$0.x, $0.y, $0.dx, $0.dy, $0.animation].allSatisfy(\.isFinite) &&
+            [$0.x, $0.y, $0.dx, $0.dy, $0.animation,$0.stamina,$0.sliding,$0.stunned].allSatisfy(\.isFinite) &&
+            (0...100).contains($0.stamina) && (0...0.55).contains($0.sliding) && (0...1.55).contains($0.stunned) &&
             (0.04...0.96).contains($0.x) && (0.08...0.92).contains($0.y) &&
             abs($0.dx) <= 1 && abs($0.dy) <= 1 && (0...3).contains($0.animation)
         } && [x,y,z,remaining].allSatisfy(\.isFinite) && (0...1).contains(x) &&
@@ -37,7 +41,7 @@ struct DoublesInput: Codable {
 }
 
 struct DoublesPacket: Codable {
-    var version = 1
+    var version = 2
     var kind: String
     var slot: Int? = nil
     var input: DoublesInput? = nil
@@ -61,7 +65,7 @@ struct DoublesFraming {
             guard (1...Self.limit).contains(size) else { throw CocoaError(.coderReadCorrupt) }
             guard buffer.count >= size + 4 else { break }
             let packet = try JSONDecoder().decode(DoublesPacket.self, from: Data(buffer.dropFirst(4).prefix(size)))
-            guard packet.version == 1 else { throw CocoaError(.coderReadCorrupt) }
+            guard packet.version == 2 else { throw CocoaError(.coderReadCorrupt) }
             result.append(packet); buffer = Data(buffer.dropFirst(size + 4))
         }
         return result
@@ -76,6 +80,7 @@ struct DoublesEngine {
     var kickoffTeam: Int? = 0
     var wait = 0.0
     var cooldown = Array(repeating: 0.0, count: 4)
+    var motions = Array(repeating:AthleteMotion(),count:4)
     static func team(_ slot: Int) -> Int { slot < 2 ? 0 : 1 }
     mutating func start() {
         let occupied = state.occupied
@@ -85,6 +90,7 @@ struct DoublesEngine {
         guard (0..<4).contains(slot), state.running else { return }
         if action == "pause", slot == 0 { state.paused.toggle(); return }
         guard !state.paused, wait <= 0, cooldown[slot] <= 0,
+              !motions[slot].isSliding, state.players[slot].stunned <= 0, state.players[slot].animation <= 0,
               kickoffTeam == nil || kickoffTeam == Self.team(slot) else { return }
         let p = state.players[slot], position = CGPoint(x: p.x, y: p.y), direction = CGPoint(x: p.dx, y: p.dy)
         guard carrier == nil || carrier == slot || action == "tackle" else { return }
@@ -97,8 +103,9 @@ struct DoublesEngine {
             guard carrier == slot else { return }
             state.players[slot].move = "stepover"; state.players[slot].animation = 1
         case "tackle":
-            guard ArenaPhysics.tackle(&ball, from: position, direction: direction) else { return }
-            carrier = nil
+            guard motions[slot].startSlide(direction:direction) else { return }
+            state.players[slot].sliding = AthleteMotion.slideDuration
+            resolveTackle(slot:slot)
         case "shot", "pass", "through", "curve", "rainbow":
             let success: Bool
             if action == "curve" { success = ArenaPhysics.curveKick(&ball, from: position, direction: direction, toward: slot < 2 ? .right : .left) }
@@ -133,12 +140,22 @@ struct DoublesEngine {
             cooldown[slot] = max(0, cooldown[slot] - dt)
             state.players[slot].animation = max(0, state.players[slot].animation - dt)
             if state.players[slot].animation == 0 { state.players[slot].move = nil }
-            guard wait == 0, state.players[slot].animation == 0 else { continue }
+            state.players[slot].stunned = max(0,state.players[slot].stunned-dt)
             let input = inputs[slot], length = hypot(input.x, input.y)
+            let allowed = wait == 0 && state.players[slot].animation == 0 && state.players[slot].stunned == 0
+            let motion = motions[slot].tick(dt:dt,moving:length > 0,sprint:input.sprint,canMove:allowed)
+            state.players[slot].stamina = motions[slot].stamina; state.players[slot].sliding = motions[slot].slideRemaining
+            guard allowed else { continue }
+            if let slide = motion.slide {
+                state.players[slot].x = min(0.95,max(0.05,state.players[slot].x+slide.x*dt/1.2))
+                state.players[slot].y = min(0.92,max(0.08,state.players[slot].y+slide.y*dt/1.2))
+                resolveTackle(slot:slot)
+                continue
+            }
             if length > 0 {
                 let dx = input.x / max(1, length), dy = input.y / max(1, length)
                 // 20% larger playable space than 1v1: slower normalized travel.
-                let speed = input.sprint ? 0.4 : 0.275
+                let speed = motion.sprinting ? 0.4 : 0.275
                 state.players[slot].x = min(0.95, max(0.05, state.players[slot].x + dx * speed * dt))
                 state.players[slot].y = min(0.92, max(0.08, state.players[slot].y + dy * speed * dt))
                 state.players[slot].dx = input.x / length; state.players[slot].dy = input.y / length
@@ -147,7 +164,8 @@ struct DoublesEngine {
         if wait == 0 {
             for slot in 0..<4 {
                 let p = state.players[slot], point = CGPoint(x: p.x, y: p.y)
-                if carrier == nil, kickoffTeam == nil || kickoffTeam == Self.team(slot),
+                if carrier == nil, state.players[slot].stunned == 0, !motions[slot].isSliding,
+                   kickoffTeam == nil || kickoffTeam == Self.team(slot),
                    ArenaPhysics.capture(&ball, by: slot < 2 ? .left : .right, player: point) { carrier = slot; kickoffTeam = nil }
             }
             if let slot = carrier {
@@ -164,6 +182,10 @@ struct DoublesEngine {
                 if scoringTeam == 0 { state.red += 1 } else { state.blue += 1 }
                 ball = .kickoff; carrier = nil; kickoffTeam = 1 - scoringTeam; wait = 2.3
                 state.players = DoublesState().players
+                for s in 0..<4 {
+                    motions[s].cancelSlide()
+                    state.players[s].stamina = motions[s].stamina
+                }
                 if kickoffTeam == 1 { state.players[0].x = 0.3; state.players[2].x = 0.54 }
                 for slot in 0..<4 where Self.team(slot) == scoringTeam {
                     state.players[slot].move = "celebration"; state.players[slot].animation = 2.1
@@ -172,6 +194,17 @@ struct DoublesEngine {
         }
         state.x = ball.x; state.y = ball.y; state.z = ball.z
         state.curving = ball.curveGoal != nil
+    }
+    private mutating func resolveTackle(slot:Int) {
+        let p = state.players[slot], point = CGPoint(x:p.x,y:p.y), direction = CGPoint(x:p.dx,y:p.dy)
+        if ArenaPhysics.tackle(&ball,from:point,direction:direction) { carrier = nil }
+        for victim in 0..<4 where Self.team(victim) != Self.team(slot) {
+            let target = state.players[victim]
+            if target.stunned <= 0 && hypot(target.x-p.x,target.y-p.y) < 0.075 {
+                state.players[victim].stunned = 1.0; motions[victim].cancelSlide()
+                if carrier == victim { ArenaPhysics.dispossess(&ball,direction:direction); carrier = nil }
+            }
+        }
     }
 }
 
@@ -212,7 +245,7 @@ final class DoublesSession {
         stop(); host = true
         let l = try NWListener(using: .tcp, on: .any); listener = l
         l.service = NWListener.Service(name: "SIU 2대2 · \(Host.current().localizedName ?? "Mac")", type: Self.service,
-                                      txtRecord: NWTXTRecord(["version": "1"]))
+                                      txtRecord: NWTXTRecord(["version": "2"]))
         l.newConnectionHandler = { [weak self] connection in
             MainActor.assumeIsolated {
                 guard let self, !self.state.running, !self.approving,
@@ -240,7 +273,7 @@ final class DoublesSession {
                 guard let self else { return }
                 self.rooms = results.compactMap {
                     guard case .service(let name, _, _, _) = $0.endpoint,
-                          case .bonjour(let txt) = $0.metadata, txt["version"] == "1" else { return nil }
+                          case .bonjour(let txt) = $0.metadata, txt["version"] == "2" else { return nil }
                     return LocalRoom(name: name, endpoint: $0.endpoint)
                 }.sorted { $0.name < $1.name }
                 self.status = self.rooms.isEmpty ? "같은 와이파이에서 2대2 방 검색 중…" : "방을 선택하고 참가하세요"
@@ -409,6 +442,9 @@ final class DoublesPitchView: NSView {
     private let sprites: [NSImage] = (1...4).compactMap {
         ResourceBundle.images.url(forResource:String(format:"move-%02d",$0),withExtension:"png").flatMap(NSImage.init(contentsOf:))
     }
+    private let tackleSprites: [NSImage] = (1...4).compactMap {
+        ResourceBundle.images.url(forResource:String(format:"tackle-%02d",$0),withExtension:"png").flatMap(NSImage.init(contentsOf:))
+    }
     private let context = CIContext()
     private var blueImages: [ObjectIdentifier:NSImage] = [:]
     private static let blueCube: Data = {
@@ -469,14 +505,20 @@ final class DoublesPitchView: NSView {
             NSColor.black.withAlphaComponent(0.3).setFill(); NSBezierPath(ovalIn:NSRect(x:center.x-22,y:center.y-6,width:44,height:12)).fill()
             let special = p.move.flatMap { moves[$0]?.image(at: ($0 == "celebration" ? 2.1 : $0 == "stepover" ? 1 : 0.65) - p.animation) }
             let walking = sprites.isEmpty ? nil : sprites[now < movingUntil[slot] ? Int(now*9)%sprites.count : 0]
-            if let image = special ?? walking, let cg = NSGraphicsContext.current?.cgContext {
+            let tackling = p.sliding > 0 && !tackleSprites.isEmpty ? tackleSprites[min(3,Int((0.55-p.sliding)/0.14))] : nil
+            if let image = special ?? tackling ?? walking, let cg = NSGraphicsContext.current?.cgContext {
                 let image = teamImage(image,blue:slot >= 2), height:CGFloat = special == nil ? 110 : 140
                 let width = height * image.size.width / max(image.size.height,1)
                 cg.saveGState(); cg.translateBy(x:center.x,y:center.y-8)
                 if p.dx < -0.1 { cg.scaleBy(x:-1,y:1) }
+                if p.sliding > 0 { cg.rotate(by:-Double.pi/3) }
+                else if p.stunned > 0 { cg.rotate(by:-Double.pi/2) }
                 image.draw(in:NSRect(x:-width/2,y:0,width:width,height:height)); cg.restoreGState()
             }
             text("\(slot == session.slot ? "▼ 나 · " : "")\(slot < 2 ? "RED" : "BLUE") #\(slot+1)",CGPoint(x:center.x-40,y:center.y-24),size:12,color:color)
+            NSColor.black.withAlphaComponent(0.6).setFill(); NSRect(x:center.x-30,y:center.y-34,width:60,height:5).fill()
+            (p.stamina < 20 ? NSColor.systemOrange : NSColor.systemGreen).setFill()
+            NSRect(x:center.x-30,y:center.y-34,width:60*p.stamina/100,height:5).fill()
             if !state.occupied.contains(slot) { text("접속 대기",CGPoint(x:center.x-30,y:center.y+76),size:12) }
         }
         previousPlayers = state.players

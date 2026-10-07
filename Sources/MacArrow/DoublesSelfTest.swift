@@ -30,6 +30,16 @@ enum DoublesSelfTest {
         check(goal.state.red == 1 && goal.kickoffTeam == 1 && goal.state.players[0].move == "celebration", "team goal and conceding kickoff")
         check(!DoublesInput(x:.nan,y:0).valid, "NaN input rejected")
         var invalid = DoublesState(); invalid.players.removeLast(); check(!invalid.valid,"invalid roster rejected")
+        var tackling = DoublesEngine(); tackling.start(); tackling.kickoffTeam = nil
+        tackling.state.players[0].x = 0.4; tackling.state.players[2].x = 0.6
+        tackling.ball = ArenaBall(x:0.6,y:0.5,carrier:.right); tackling.carrier = 2
+        tackling.action("tackle",slot:0)
+        check(tackling.motions[0].isSliding,"tackle starts away from ball")
+        for _ in 0..<30 { tackling.tick(dt:1.0/60) }
+        check(tackling.state.players[0].x > 0.55 && tackling.state.players[2].stunned > 0 && tackling.carrier != 2,"slide hits during travel and releases possession")
+        var running = DoublesEngine(); running.start(); running.inputs[1] = DoublesInput(x:1,y:0,sprint:true)
+        for _ in 0..<270 { running.tick(dt:1.0/60) }
+        check(running.state.players[1].stamina < 20,"2v2 synchronized stamina drains")
         if let bytes = DoublesFraming.encode(DoublesPacket(kind:"state",state:goal.state)) {
             var framing = DoublesFraming()
             do {
@@ -62,8 +72,8 @@ enum DoublesSelfTest {
         guard wait(3,until:{ host.state.occupied.count == 4 && guests.allSatisfy { $0.state.occupied.count == 4 } }) else { return ["2v2 four-client lobby"] }
         host.startMatch()
         guard wait(3,until:{ guests.allSatisfy { $0.state.running } }) else { return ["2v2 start broadcast"] }
-        guests[0].input = DoublesInput(x:1,y:0)
-        guard wait(2,until:{ host.state.players[1].x > 0.36 && guests[2].state.players[1].x > 0.35 }) else { return ["2v2 guest input and host snapshot relay"] }
+        guests[0].input = DoublesInput(x:1,y:0,sprint:true)
+        guard wait(2,until:{ host.state.players[1].x > 0.36 && guests[2].state.players[1].x > 0.35 && guests[2].state.players[1].stamina < 97 }) else { return ["2v2 guest input, stamina and host snapshot relay"] }
         host.action("pause")
         guard wait(2,until:{ guests.allSatisfy { $0.state.paused } }) else { return ["2v2 pause synchronization"] }
         guests[2].stop()

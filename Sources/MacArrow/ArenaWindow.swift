@@ -66,6 +66,10 @@ final class ArenaWindowController: NSWindowController, NSWindowDelegate {
     func advance(dt: TimeInterval) { arenaView.advance(dt: dt) }
     var localPosition: CGPoint { arenaView.localPosition }
     var localDirection: CGPoint { arenaView.localDirection }
+    var stamina: Double { arenaView.motion.stamina }
+    var isSliding: Bool { arenaView.motion.isSliding }
+    @discardableResult func startSlide() -> Bool { arenaView.startSlide() }
+    func setRemoteStamina(_ value: Double) { arenaView.remoteStamina = value }
     var remotePosition: CGPoint { arenaView.remotePosition }
     var isLocalFallen: Bool { arenaView.isLocalFallen }
     func stun() { arenaView.stun() }
@@ -184,6 +188,12 @@ private final class ArenaView: NSView {
     var fireBall = false
     private(set) var localDirection = CGPoint(x: 1, y: 0)
     private var velocity = CGPoint.zero
+    var motion = AthleteMotion()
+    var remoteStamina = 100.0
+    @discardableResult func startSlide() -> Bool {
+        guard !paused, !isLocalFallen, motion.startSlide(direction:localDirection) else { return false }
+        tackleAt = visualNow; velocity = .zero; return true
+    }
     private var stunnedUntil: TimeInterval = 0
     private var remoteStunnedUntil: TimeInterval = 0
     private var fallStartedAt: TimeInterval = -.infinity
@@ -233,6 +243,7 @@ private final class ArenaView: NSView {
     var isLocalFallen: Bool { ProcessInfo.processInfo.systemUptime < stunnedUntil }
 
     func reset(homeSide: FieldEdge) {
+        motion = AthleteMotion(); remoteStamina = 100
         self.homeSide = homeSide
         resetForKickoff(conceding: .left)
         paused = false
@@ -242,6 +253,7 @@ private final class ArenaView: NSView {
     }
 
     func resetForKickoff(conceding side: FieldEdge) {
+        motion.cancelSlide()
         specialMoves.removeAll()
         ballTrail.removeAll()
         ballRotation = 0
@@ -378,6 +390,7 @@ private final class ArenaView: NSView {
     }
 
     func stun() {
+        motion.cancelSlide()
         fallStartedAt = ProcessInfo.processInfo.systemUptime
         stunnedUntil = fallStartedAt + fallDuration
         velocity = .zero
@@ -405,11 +418,13 @@ private final class ArenaView: NSView {
         let dx = CGFloat((keys.contains(124) ? 1 : 0) - (keys.contains(123) ? 1 : 0))
         let dy = CGFloat((keys.contains(126) ? 1 : 0) - (keys.contains(125) ? 1 : 0))
         let length = hypot(dx, dy)
-        let speed: CGFloat = sprint ? 0.48 : 0.33
-        let target = activeSpecial != nil ? .zero : phantom ? CGPoint(x: 0, y: phantomVertical * 0.72) :
+        let movement = motion.tick(dt:dt,moving:length > 0,sprint:sprint,
+                                  canMove:!isLocalFallen && activeSpecial == nil && !turning && !phantom)
+        let speed: CGFloat = movement.sprinting ? 0.48 : 0.33
+        let target = movement.slide ?? (activeSpecial != nil ? .zero : phantom ? CGPoint(x: 0, y: phantomVertical * 0.72) :
             turning ? CGPoint(x: localDirection.x * 0.19, y: localDirection.y * 0.19) :
-            (length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero)
-        let blend = min(CGFloat(1), CGFloat(dt) * 14)
+            (length > 0 ? CGPoint(x: dx / length * speed, y: dy / length * speed) : .zero))
+        let blend = movement.slide != nil ? 1 : min(CGFloat(1), CGFloat(dt) * 14)
         velocity.x += (target.x - velocity.x) * blend
         velocity.y += (target.y - velocity.y) * blend
         localPosition.x = min(max(localPosition.x + velocity.x * dt, 0.065), 0.935)
@@ -417,7 +432,7 @@ private final class ArenaView: NSView {
         let remoteBlend = min(CGFloat(1), CGFloat(dt) * 12)
         remotePosition.x += (remoteTarget.x - remotePosition.x) * remoteBlend
         remotePosition.y += (remoteTarget.y - remotePosition.y) * remoteBlend
-        if length > 0 && !turning && !phantom {
+        if length > 0 && !turning && !phantom && movement.slide == nil && activeSpecial == nil {
             let current = atan2(localDirection.y, localDirection.x)
             let wanted = atan2(dy, dx)
             let delta = atan2(sin(wanted - current), cos(wanted - current))
@@ -443,7 +458,6 @@ private final class ArenaView: NSView {
         }
         case 49: break
         case 0: if !event.isARepeat {
-            tackleAt = ProcessInfo.processInfo.systemUptime
             onTackle?(localPosition, localDirection)
         }
         case 3: if !event.isARepeat { onPowerShot?(localPosition) }
@@ -597,6 +611,9 @@ private final class ArenaView: NSView {
                 context.scaleBy(x: CGFloat(abs(facing) < 0.16 ? (facing < 0 ? -0.16 : 0.16) : facing), y: 1)
             }
             if direction.x < -0.1 { context.scaleBy(x: -1, y: 1) }
+            if !isFalling && (0..<AthleteMotion.slideDuration).contains(sinceTackle) {
+                context.rotate(by:-Double.pi/3)
+            }
             if isFalling {
                 let tilt: CGFloat
                 if sinceFall < 0.35 { tilt = CGFloat(sinceFall / 0.35) }
@@ -615,6 +632,11 @@ private final class ArenaView: NSView {
             arrow.lineWidth = 5; color.setStroke(); arrow.stroke()
         }
         let label = isLocal ? "나" : "상대"
+        let stamina = isLocal ? motion.stamina : remoteStamina
+        let bar = NSRect(x:center.x-30,y:center.y-61,width:60,height:5)
+        NSColor.black.withAlphaComponent(0.5).setFill(); bar.fill()
+        (stamina < 20 ? NSColor.systemOrange : NSColor.systemGreen).setFill()
+        NSRect(x:bar.minX,y:bar.minY,width:bar.width*stamina/100,height:bar.height).fill()
         NSString(string: label).draw(in: NSRect(x: center.x - 25, y: center.y - 48, width: 50, height: 20),
                                       withAttributes: [.font: NSFont.boldSystemFont(ofSize: 14),
                                                        .foregroundColor: NSColor.white,

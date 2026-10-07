@@ -6,6 +6,7 @@ final class ArenaPreviewController {
     private var timer: Timer?
     private var ball = ArenaBall.kickoff
     private var opponent = CGPoint(x: 0.75, y: 0.5)
+    private var opponentMotion = AthleteMotion()
     private var lastTick: TimeInterval = 0
     private var myScore = 0
     private var theirScore = 0
@@ -52,6 +53,7 @@ final class ArenaPreviewController {
         arena.onTackle = { [weak self] position, direction in
             guard let self else { return }
             guard self.canAct, self.kickoffOwner == nil else { return }
+            guard self.arena.startSlide() else { return }
             _ = ArenaPhysics.tackle(&self.ball, from: position, direction: direction)
             if hypot(position.x - self.opponent.x, position.y - self.opponent.y) < 0.08 {
                 self.opponentFallenUntil = ProcessInfo.processInfo.systemUptime + 1.55
@@ -141,6 +143,7 @@ final class ArenaPreviewController {
         }
         ball = .kickoff
         opponent = CGPoint(x: 0.75, y: 0.5)
+        opponentMotion = AthleteMotion()
         myScore = 0
         theirScore = 0
         kickoffAt = 0
@@ -176,7 +179,7 @@ final class ArenaPreviewController {
     }
 
     private var canAct: Bool {
-        pausedAt == nil && !powerPending && ProcessInfo.processInfo.systemUptime >= kickoffAt &&
+        pausedAt == nil && !powerPending && !arena.isSliding && ProcessInfo.processInfo.systemUptime >= kickoffAt &&
             !arena.isLocalFallen && arena.specialProgress(side: .left) == nil &&
             arena.marseilleProgress(side: .left) == nil && arena.phantomProgress(side: .left) == nil
     }
@@ -222,6 +225,13 @@ final class ArenaPreviewController {
         }
         arena.setFireBall(now >= powerReleaseAt && now < fireUntil)
         if now >= kickoffAt && !powerPending { arena.advance(dt: dt) }
+        if arena.isSliding && kickoffOwner == nil {
+            _ = ArenaPhysics.tackle(&ball,from:arena.localPosition,direction:arena.localDirection)
+            if now >= opponentFallenUntil, hypot(arena.localPosition.x-opponent.x,arena.localPosition.y-opponent.y) < 0.075 {
+                opponentFallenUntil = now+1.55; opponentMotion.cancelSlide(); arena.stunRemote()
+                if ball.carrier == .right { ArenaPhysics.dispossess(&ball,direction:arena.localDirection) }
+            }
+        }
         if let carrier = ball.carrier {
             ArenaPhysics.carry(&ball, beside: carrier == .left ? arena.localPosition : opponent,
                                direction: carrier == .left ? arena.localDirection : CGPoint(x: -1, y: 0),
@@ -232,11 +242,21 @@ final class ArenaPreviewController {
         let distance = hypot(delta.x, delta.y)
         let direction = distance > 0.001
             ? CGPoint(x: delta.x / distance, y: delta.y / distance) : CGPoint(x: -1, y: 0)
-        if now >= kickoffAt && !powerPending && now >= opponentFallenUntil && distance > 0.055 {
+        let opponentMovement = opponentMotion.tick(dt:dt,moving:distance > 0.055,sprint:false,canMove:now >= opponentFallenUntil)
+        if now >= kickoffAt && !powerPending, let slide = opponentMovement.slide {
+            opponent.x = min(max(opponent.x+slide.x*dt,0.065),0.935)
+            opponent.y = min(max(opponent.y+slide.y*dt,0.1),0.9)
+            _ = ArenaPhysics.tackle(&ball,from:opponent,direction:direction)
+            if hypot(opponent.x-arena.localPosition.x,opponent.y-arena.localPosition.y) < 0.075 {
+                arena.stun()
+                if ball.carrier == .left { ArenaPhysics.dispossess(&ball,direction:direction) }
+            }
+        }
+        if now >= kickoffAt && !powerPending && now >= opponentFallenUntil && distance > 0.055 && opponentMovement.slide == nil {
             opponent.x = min(max(opponent.x + direction.x * dt * 0.22, 0.065), 0.935)
             opponent.y = min(max(opponent.y + direction.y * dt * 0.22, 0.10), 0.90)
         }
-        if now >= kickoffAt && ball.carrier == .right && now >= opponentFallenUntil {
+        if now >= kickoffAt && ball.carrier == .right && now >= opponentFallenUntil && opponentMovement.slide == nil {
             opponent.x = max(0.065, opponent.x - dt * 0.20)
             ArenaPhysics.carry(&ball, beside: opponent, direction: CGPoint(x: -1, y: 0))
         }
@@ -254,10 +274,10 @@ final class ArenaPreviewController {
                arena.marseilleProgress(side: .left) == nil &&
                arena.phantomProgress(side: .left) == nil,
                hypot(opponent.x - arena.localPosition.x,
-                     opponent.y - arena.localPosition.y) < 0.07 {
+                     opponent.y - arena.localPosition.y) < 0.20 {
                 lastOpponentTackleAt = now
+                _ = opponentMotion.startSlide(direction:direction)
                 arena.animateRemoteTackle()
-                arena.stun()
                 _ = ArenaPhysics.tackle(&ball, from: opponent, direction: direction)
             }
             switch ArenaPhysics.step(&ball, dt: dt) {
